@@ -1,98 +1,154 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-# start.sh — Smart cross-platform deploy for Smart Document Parser
+# start.sh — Zero-Touch Deployment for Smart Document Parser
+# Handles: Docker install, buildx, Live USB overlay fix,
+#          image build, and container execution.
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
 IMAGE_NAME="smart-parser"
+DAEMON_JSON="/etc/docker/daemon.json"
 
-echo "══════════════════════════════════════════"
-echo "  Smart Document Parser — Docker Deploy"
-echo "══════════════════════════════════════════"
+# ── Helpers ──────────────────────────────────────────────────
+info()  { echo "   ℹ️  $*"; }
+ok()    { echo "   ✅ $*"; }
+warn()  { echo "   ⚠️  $*"; }
+fail()  { echo "   ❌ $*"; exit 1; }
+step()  { echo ""; echo "── $* ──────────────────────────────"; }
+
 echo ""
+echo "══════════════════════════════════════════════"
+echo "  🚀 Smart Document Parser — Zero-Touch Deploy"
+echo "══════════════════════════════════════════════"
 
-# ── 1. Pre-flight: check if Docker is installed ─────────────
+# ═════════════════════════════════════════════════════════════
+# 1. DOCKER INSTALLATION
+# ═════════════════════════════════════════════════════════════
+step "1/5  Docker pre-flight check"
+
 if command -v docker &>/dev/null; then
-    echo "✅ Docker found: $(docker --version)"
+    ok "Docker already installed: $(docker --version 2>/dev/null || echo 'unknown')"
 else
-    echo "⚠️  Docker is not installed. Attempting auto-install..."
-    echo ""
+    warn "Docker is not installed. Starting auto-install..."
 
-    # ── 2. OS Detection via /etc/os-release ──────────────────
+    # ── OS Detection ─────────────────────────────────────────
     if [[ ! -f /etc/os-release ]]; then
-        echo "❌ ERROR: Cannot detect OS (/etc/os-release not found)."
-        echo "   Please install Docker manually:"
-        echo "   https://docs.docker.com/get-docker/"
-        exit 1
+        fail "Cannot detect OS (/etc/os-release missing). Install Docker manually: https://docs.docker.com/get-docker/"
     fi
 
-    # Source the file to get $ID and $ID_LIKE variables
     # shellcheck source=/dev/null
     source /etc/os-release
+    info "Detected OS: ${PRETTY_NAME:-${ID}} (ID=${ID}, ID_LIKE=${ID_LIKE:-none})"
 
-    echo "   Detected OS: ${PRETTY_NAME:-${ID}}"
-    echo ""
+    # ── Determine package manager & install ──────────────────
+    install_apt() {
+        info "Installing via apt-get..."
+        sudo apt-get update -qq
+        sudo apt-get install -y docker.io docker-buildx-plugin 2>/dev/null \
+            || sudo apt-get install -y docker.io   # fallback if buildx pkg unavailable
+        ok "apt-get installation complete."
+    }
 
-    # ── 3. Auto-installation per distro family ───────────────
+    install_pacman() {
+        info "Installing via pacman..."
+        sudo pacman -Sy --noconfirm docker docker-buildx
+        ok "pacman installation complete."
+    }
+
     case "${ID}" in
-        ubuntu|debian|astra)
-            echo "📦 Installing Docker via apt-get (${ID})..."
-            sudo apt-get update -qq
-            sudo apt-get install -y docker.io
-            sudo systemctl enable --now docker
-            ;;
-        arch|endeavouros)
-            echo "📦 Installing Docker via pacman (${ID})..."
-            sudo pacman -Sy --noconfirm docker
-            sudo systemctl enable --now docker
-            ;;
+        ubuntu|debian|astra)    install_apt ;;
+        arch|endeavouros)       install_pacman ;;
         *)
-            # Fall back: check ID_LIKE for derivative distros
             if [[ "${ID_LIKE:-}" == *"debian"* || "${ID_LIKE:-}" == *"ubuntu"* ]]; then
-                echo "📦 Installing Docker via apt-get (${ID}, debian-like)..."
-                sudo apt-get update -qq
-                sudo apt-get install -y docker.io
-                sudo systemctl enable --now docker
+                info "Derivative distro (${ID}) → using apt-get path."
+                install_apt
             elif [[ "${ID_LIKE:-}" == *"arch"* ]]; then
-                echo "📦 Installing Docker via pacman (${ID}, arch-like)..."
-                sudo pacman -Sy --noconfirm docker
-                sudo systemctl enable --now docker
+                info "Derivative distro (${ID}) → using pacman path."
+                install_pacman
             else
-                echo "❌ ERROR: Unsupported OS '${PRETTY_NAME:-${ID}}'."
-                echo "   Please install Docker manually:"
-                echo "   https://docs.docker.com/get-docker/"
-                exit 1
+                fail "Unsupported OS '${PRETTY_NAME:-${ID}}'. Install Docker manually: https://docs.docker.com/get-docker/"
             fi
             ;;
     esac
 
-    # Verify installation succeeded
-    if ! command -v docker &>/dev/null; then
-        echo "❌ ERROR: Docker installation failed."
-        echo "   Please install Docker manually:"
-        echo "   https://docs.docker.com/get-docker/"
-        exit 1
-    fi
-
-    echo ""
-    echo "✅ Docker installed: $(docker --version)"
+    # Verify
+    command -v docker &>/dev/null || fail "Docker binary not found after installation."
+    ok "Docker installed: $(docker --version 2>/dev/null)"
 fi
 
-echo ""
+# ═════════════════════════════════════════════════════════════
+# 2. BUILDX CHECK
+# ═════════════════════════════════════════════════════════════
+step "2/5  Buildx availability"
 
-# ── 4. Build the image ───────────────────────────────────────
-echo "🔨 Building image '${IMAGE_NAME}' ..."
-echo ""
-sudo docker build -t "${IMAGE_NAME}" .
+if sudo docker buildx version &>/dev/null; then
+    ok "Buildx available: $(sudo docker buildx version 2>/dev/null)"
+    USE_BUILDX=true
+else
+    warn "Buildx not found — will use legacy builder."
+    USE_BUILDX=false
+fi
+
+# ═════════════════════════════════════════════════════════════
+# 3. LIVE USB / OVERLAY FILESYSTEM SELF-HEALING
+# ═════════════════════════════════════════════════════════════
+step "3/5  Filesystem & storage-driver check"
+
+ROOT_FSTYPE=$(df -T / | awk 'NR==2 {print $2}')
+info "Root filesystem type: ${ROOT_FSTYPE}"
+
+if [[ "${ROOT_FSTYPE}" == "overlay" ]]; then
+    warn "Overlay root detected — likely a Live USB environment."
+    info "Docker's default overlay2 driver will fail on overlay-on-overlay."
+    info "Applying fix: setting storage-driver to 'vfs' in ${DAEMON_JSON}."
+
+    sudo mkdir -p "$(dirname "${DAEMON_JSON}")"
+
+    # Idempotent: only write if not already configured correctly
+    if [[ -f "${DAEMON_JSON}" ]] && grep -q '"vfs"' "${DAEMON_JSON}" 2>/dev/null; then
+        ok "daemon.json already contains vfs driver — no changes needed."
+    else
+        echo '{"storage-driver": "vfs"}' | sudo tee "${DAEMON_JSON}" >/dev/null
+        ok "Wrote ${DAEMON_JSON} with storage-driver=vfs."
+    fi
+else
+    ok "Standard filesystem (${ROOT_FSTYPE}) — using Docker's default storage driver."
+fi
+
+# ═════════════════════════════════════════════════════════════
+# 4. DOCKER DAEMON — ENABLE & (RE)START
+# ═════════════════════════════════════════════════════════════
+step "4/5  Docker daemon"
+
+if command -v systemctl &>/dev/null; then
+    sudo systemctl enable docker 2>/dev/null || true
+    sudo systemctl restart docker
+    ok "Docker daemon is enabled and running."
+else
+    warn "systemctl not found — assuming Docker daemon is managed externally."
+fi
+
+# Quick smoke test
+sudo docker info >/dev/null 2>&1 || fail "Docker daemon is not responding. Check 'sudo journalctl -xeu docker'."
+ok "Docker daemon healthy."
+
+# ═════════════════════════════════════════════════════════════
+# 5. BUILD & RUN
+# ═════════════════════════════════════════════════════════════
+step "5/5  Build & run '${IMAGE_NAME}'"
+
+info "Building image..."
+if [[ "${USE_BUILDX}" == true ]]; then
+    sudo docker buildx build -t "${IMAGE_NAME}" .
+else
+    sudo docker build -t "${IMAGE_NAME}" .
+fi
+ok "Image '${IMAGE_NAME}' built successfully."
 
 echo ""
-echo "✅ Build complete."
-echo ""
-
-# ── 5. Run the container ─────────────────────────────────────
-echo "🚀 Running container ..."
-echo "   INPUT     → $(pwd)/INPUT"
-echo "   PROCESSED → $(pwd)/PROCESSED"
+info "Running container..."
+info "   INPUT     → $(pwd)/INPUT"
+info "   PROCESSED → $(pwd)/PROCESSED"
 echo ""
 
 sudo docker run --rm \
@@ -101,4 +157,6 @@ sudo docker run --rm \
     "${IMAGE_NAME}"
 
 echo ""
-echo "🏁 Done."
+echo "══════════════════════════════════════════════"
+echo "  🏁 Deployment complete. All done!"
+echo "══════════════════════════════════════════════"
