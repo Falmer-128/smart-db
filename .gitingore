@@ -21,6 +21,9 @@ OUTPUT/*
 *.txt
 *.csv
 *.xlsx
+*.png
+*.jpg
+*.jpeg
 
 # Системные файлы (если потом будешь открывать на Windows/Mac)
 .DS_Store
