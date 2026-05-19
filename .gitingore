@@ -1,0 +1,27 @@
+# Виртуальное окружение
+.venv/
+env/
+venv/
+
+# Кэш Python
+__pycache__/
+*.pyc
+
+# Исключаем содержимое рабочих папок, НО оставляем сами папки
+INPUT/*
+!INPUT/.gitkeep
+PROCESSED/*
+!PROCESSED/.gitkeep
+OUTPUT/*
+!OUTPUT/.gitkeep
+
+# Исключаем случайные документы в корне
+*.pdf
+*.docx
+*.txt
+*.csv
+*.xlsx
+
+# Системные файлы (если потом будешь открывать на Windows/Mac)
+.DS_Store
+Thumbs.db
