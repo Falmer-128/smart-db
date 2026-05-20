@@ -104,7 +104,7 @@ That's it. The script will install Docker for you if needed.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/smart-document-parser.git
+git clone https://github.com/Falmer-128/smart-db.git
 cd smart-document-parser
 
 # 2. Drop your documents into the INPUT/ folder
