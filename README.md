@@ -65,7 +65,7 @@ A single `start.sh` script handles **everything**:
 ## 📁 Project Structure
 
 ```
-smart-document-parser/
+smart-db/
 │
 ├── start.sh                 # 🚀 Zero-touch deploy script (Docker install + build + run)
 ├── Dockerfile               # Optimized multi-stage build (python:3.10-slim)
@@ -73,17 +73,21 @@ smart-document-parser/
 ├── .env                     # Environment variables (OCR settings, paths)
 ├── config.py                # Centralized configuration loader
 ├── main.py                  # Entry point — orchestrates the pipeline
+├── smart_parser.py          # Standalone legacy parser (single-file version)
 │
 ├── core/
+│   ├── __init__.py
 │   └── router.py            # Smart routing: extension check → text-layer detection → OCR fallback
 │
 ├── extractors/
+│   ├── __init__.py
 │   ├── pdf_extractor.py     # Fast text-layer PDF extraction (pypdf)
 │   ├── ocr_extractor.py     # OCR pipeline for scanned PDFs (pdf2image + Tesseract)
 │   ├── docx_extractor.py    # Word document extraction (python-docx)
 │   └── excel_extractor.py   # Excel → Markdown tables (pandas + tabulate)
 │
 ├── utils/
+│   ├── __init__.py
 │   └── file_manager.py      # Directory scanning, idempotency logic, file I/O
 │
 ├── INPUT/                   # 📥 Drop your raw documents here
@@ -104,8 +108,8 @@ That's it. The script will install Docker for you if needed.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/smart-document-parser.git
-cd smart-document-parser
+git clone https://github.com/Falmer-128/smart-db.git
+cd smart-db
 
 # 2. Drop your documents into the INPUT/ folder
 cp /path/to/your/documents/* INPUT/
