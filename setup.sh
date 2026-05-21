@@ -49,16 +49,15 @@ if ! command_exists curl; then
     install_package curl
 fi
 
-if ! command_exists docker; then
-    if [ "$PKG_MANAGER" = "apt-get" ]; then
-        install_package docker.io
-    else
-        install_package docker
+if ! command_exists docker || ! docker compose version >/dev/null 2>&1; then
+    echo "Docker or Docker Compose V2 is missing. Starting auto-install..."
+    if [ "$PKG_MANAGER" = "apt-get" ] || [ "$PKG_MANAGER" = "dnf" ]; then
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sudo sh get-docker.sh
+        rm -f get-docker.sh
+    elif [ "$PKG_MANAGER" = "pacman" ]; then
+        sudo pacman -Sy --noconfirm docker docker-buildx docker-compose
     fi
-fi
-
-if ! command_exists docker-compose && ! docker compose version >/dev/null 2>&1; then
-    install_package docker-compose
 fi
 
 # 2. Ensure Docker Daemon is started

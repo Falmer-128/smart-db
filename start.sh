@@ -42,16 +42,16 @@ else
 
     # ── Determine package manager & install ──────────────────
     install_apt() {
-        info "Installing via apt-get..."
-        sudo apt-get update -qq
-        sudo apt-get install -y docker.io docker-buildx-plugin 2>/dev/null \
-            || sudo apt-get install -y docker.io   # fallback if buildx pkg unavailable
-        ok "apt-get installation complete."
+        info "Installing via get.docker.sh..."
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sudo sh get-docker.sh
+        rm -f get-docker.sh
+        ok "get.docker.sh installation complete."
     }
 
     install_pacman() {
         info "Installing via pacman..."
-        sudo pacman -Sy --noconfirm docker docker-buildx
+        sudo pacman -Sy --noconfirm docker docker-buildx docker-compose
         ok "pacman installation complete."
     }
 

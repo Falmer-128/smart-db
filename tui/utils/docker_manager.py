@@ -21,7 +21,7 @@ async def run_docker_compose_up(cwd: str = ".") -> AsyncGenerator[str, None]:
     2>&1 redirects stderr to stdout so we can stream it all sequentially.
     """
     process = await asyncio.create_subprocess_shell(
-        "docker-compose up -d --build 2>&1",
+        "docker compose up -d --build 2>&1",
         stdout=asyncio.subprocess.PIPE,
         cwd=cwd
     )
@@ -36,4 +36,4 @@ async def run_docker_compose_up(cwd: str = ".") -> AsyncGenerator[str, None]:
     await process.wait()
     
     if process.returncode != 0:
-        raise RuntimeError(f"docker-compose failed with exit code {process.returncode}")
+        raise RuntimeError(f"docker compose failed with exit code {process.returncode}")
