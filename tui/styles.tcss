@@ -1,0 +1,267 @@
+/* ═══════════════════════════════════════════════════════════
+   Smart Document Parser — TUI Theme (Textual CSS)
+   
+   Dark theme with accent colours inspired by the project's
+   vibrant emoji-based design language.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Global ──────────────────────────────────────────────── */
+
+Screen {
+    background: #0d1117;
+    color: #e6edf3;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+
+Header {
+    background: #161b22;
+    color: #58a6ff;
+    dock: top;
+    height: 3;
+    content-align: center middle;
+}
+
+HeaderTitle {
+    color: #58a6ff;
+    text-style: bold;
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+
+Footer {
+    background: #161b22;
+    color: #8b949e;
+}
+
+FooterKey {
+    background: #21262d;
+    color: #58a6ff;
+}
+
+/* ── Layout Containers ───────────────────────────────────── */
+
+#main-container {
+    layout: horizontal;
+    height: 1fr;
+}
+
+#sidebar-container {
+    width: 36;
+    min-width: 28;
+    max-width: 48;
+    background: #0d1117;
+    border-right: solid #21262d;
+}
+
+#content-container {
+    width: 1fr;
+    layout: vertical;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+
+#sidebar-title {
+    dock: top;
+    height: 3;
+    content-align: center middle;
+    background: #161b22;
+    color: #f0883e;
+    text-style: bold;
+    border-bottom: solid #21262d;
+    padding: 0 1;
+}
+
+#file-tree {
+    padding: 1 0;
+    scrollbar-size: 1 1;
+    background: #0d1117;
+}
+
+#file-tree > .tree--cursor {
+    background: #1f6feb;
+    color: #ffffff;
+    text-style: bold;
+}
+
+#file-tree > .tree--highlight {
+    background: #161b22;
+}
+
+#file-tree .tree--guides {
+    color: #30363d;
+}
+
+/* ── Data Viewer ─────────────────────────────────────────── */
+
+#data-viewer {
+    height: 1fr;
+    padding: 1 2;
+    background: #0d1117;
+    border-bottom: solid #21262d;
+    scrollbar-size: 1 1;
+}
+
+#viewer-title {
+    dock: top;
+    height: 3;
+    content-align: left middle;
+    background: #161b22;
+    color: #7ee787;
+    text-style: bold;
+    padding: 0 2;
+    border-bottom: solid #21262d;
+}
+
+/* ── Status Bar ──────────────────────────────────────────── */
+
+#status-bar {
+    dock: bottom;
+    height: 3;
+    layout: horizontal;
+    background: #161b22;
+    border-top: solid #21262d;
+    padding: 0 1;
+}
+
+#status-pipeline {
+    width: 1fr;
+    content-align: left middle;
+    color: #7ee787;
+    padding: 0 1;
+}
+
+#status-counts {
+    width: auto;
+    min-width: 30;
+    content-align: center middle;
+    color: #8b949e;
+    padding: 0 1;
+}
+
+#status-last-op {
+    width: 1fr;
+    content-align: right middle;
+    color: #d2a8ff;
+    padding: 0 1;
+}
+
+/* ── Command Input ───────────────────────────────────────── */
+
+#command-container {
+    dock: bottom;
+    height: 3;
+    layout: horizontal;
+    background: #161b22;
+    border-top: solid #30363d;
+    padding: 0 1;
+}
+
+#command-prompt {
+    width: 4;
+    content-align: left middle;
+    color: #f0883e;
+    text-style: bold;
+    padding: 0 0 0 1;
+}
+
+#command-input {
+    width: 1fr;
+    background: #0d1117;
+    color: #e6edf3;
+    border: none;
+    padding: 0 1;
+}
+
+#command-input:focus {
+    border: none;
+}
+
+#command-input > .input--cursor {
+    color: #58a6ff;
+}
+
+/* ── Welcome / Splash ────────────────────────────────────── */
+
+.welcome-text {
+    text-align: center;
+    color: #8b949e;
+    padding: 2 4;
+}
+
+.welcome-title {
+    text-style: bold;
+    color: #58a6ff;
+}
+
+/* ── Processing feedback ─────────────────────────────────── */
+
+.success-text {
+    color: #7ee787;
+}
+
+.error-text {
+    color: #f85149;
+}
+
+.warning-text {
+    color: #d29922;
+}
+
+.info-text {
+    color: #58a6ff;
+}
+
+.muted-text {
+    color: #484f58;
+}
+
+/* ── Scrollbar styling ───────────────────────────────────── */
+
+Scrollbar {
+    background: #0d1117;
+    scrollbar-color: #30363d;
+    scrollbar-color-active: #58a6ff;
+    scrollbar-color-hover: #484f58;
+}
+
+/* ── Help modal ──────────────────────────────────────────── */
+
+#help-modal {
+    align: center middle;
+    width: 72;
+    height: auto;
+    max-height: 80%;
+    background: #161b22;
+    border: solid #30363d;
+    padding: 2 3;
+}
+
+#help-modal-title {
+    text-align: center;
+    text-style: bold;
+    color: #58a6ff;
+    padding-bottom: 1;
+}
+
+#help-content {
+    padding: 1 0;
+    color: #e6edf3;
+    height: auto;
+}
+
+/* ── Processing modal ────────────────────────────────────── */
+
+#processing-indicator {
+    dock: top;
+    height: 1;
+    background: #1f6feb;
+    color: #ffffff;
+    content-align: center middle;
+    text-style: bold;
+    display: none;
+}
+
+#processing-indicator.visible {
+    display: block;
+}
