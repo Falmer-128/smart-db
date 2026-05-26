@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, Callable
 
 import httpx
 
@@ -16,6 +16,8 @@ OLLAMA_POLL_INTERVAL = 1.0   # seconds
 
 async def ensure_ollama_running(
     cwd: str | None = None,
+    log_callback: Callable[[str], None] | None = None,
+    cancel_event: asyncio.Event | None = None,
 ) -> tuple[bool, str]:
     """
     Lazily start the Ollama container and wait until its API is healthy.
@@ -29,6 +31,10 @@ async def ensure_ollama_running(
     cwd : str | None
         Working directory containing ``docker-compose.yml``.
         Defaults to the current working directory.
+    log_callback : Callable[[str], None] | None
+        Optional callback to stream output (e.g. from docker pull).
+    cancel_event : asyncio.Event | None
+        Optional event to signal cancellation during the docker pull process.
 
     Returns
     -------
@@ -37,6 +43,82 @@ async def ensure_ollama_running(
     """
     if cwd is None:
         cwd = os.getcwd()
+
+    # ── Check if image exists ────────────────────────────────
+    check_proc = await asyncio.create_subprocess_exec(
+        "docker", "images", "-q", "ollama/ollama",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, _ = await check_proc.communicate()
+    image_exists = bool(stdout.strip())
+
+    if not image_exists:
+        max_attempts = 5
+        pull_success = False
+
+        for attempt in range(1, max_attempts + 1):
+            if attempt == 1:
+                if log_callback:
+                    log_callback("Pulling ollama/ollama base image...\n")
+            else:
+                if log_callback:
+                    log_callback(f"⚠️ Connection stalled. Reconnecting and resuming download (Attempt {attempt}/{max_attempts})...\n")
+
+            pull_proc = await asyncio.create_subprocess_exec(
+                "docker", "pull", "ollama/ollama",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT
+            )
+
+            if pull_proc.stdout:
+                while True:
+                    try:
+                        if cancel_event:
+                            read_task = asyncio.create_task(pull_proc.stdout.readline())
+                            cancel_task = asyncio.create_task(cancel_event.wait())
+                            done, pending = await asyncio.wait(
+                                [read_task, cancel_task],
+                                timeout=45.0,
+                                return_when=asyncio.FIRST_COMPLETED
+                            )
+                            
+                            if not done:
+                                pull_proc.kill()
+                                for p in pending:
+                                    p.cancel()
+                                break
+                            
+                            if cancel_task in done:
+                                pull_proc.kill()
+                                for p in pending:
+                                    p.cancel()
+                                return False, "Cancelled by user"
+                            
+                            line = read_task.result()
+                            for p in pending:
+                                p.cancel()
+                        else:
+                            line = await asyncio.wait_for(
+                                pull_proc.stdout.readline(), timeout=45.0
+                            )
+                    except asyncio.TimeoutError:
+                        pull_proc.kill()
+                        break
+                    
+                    if not line:
+                        break
+                    
+                    if log_callback:
+                        log_callback(line.decode(errors='replace'))
+            
+            await pull_proc.wait()
+            if pull_proc.returncode == 0:
+                pull_success = True
+                break
+        
+        if not pull_success:
+            return False, f"Failed to pull ollama/ollama image after {max_attempts} attempts."
 
     # ── Step 1: Start the container ──────────────────────────
     proc = await asyncio.create_subprocess_shell(
