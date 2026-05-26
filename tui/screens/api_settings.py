@@ -1,0 +1,224 @@
+"""
+API Settings Screen — configure external LLM providers.
+
+Supports Local Ollama, OpenRouter, and NVIDIA NIM backends.
+Saves API keys and provider selection to .env for docker-compose
+and the LLM router to consume.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from textual.app import ComposeResult
+from textual.screen import Screen
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Input,
+    Label,
+    RadioButton,
+    RadioSet,
+    Static,
+)
+from textual.containers import Horizontal, Vertical
+from textual import work
+
+
+class APISettingsScreen(Screen):
+    """Configure LLM backend provider, API keys, and model overrides."""
+
+    DEFAULT_MODELS = {
+        "ollama": "",
+        "openrouter": "meta-llama/llama-3.1-8b-instruct",
+        "nvidia_nim": "meta/llama-3.1-8b-instruct",
+    }
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._selected_provider: str = "ollama"
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Vertical(classes="panel", id="api-panel"):
+            yield Static("⚙️  API Settings", classes="title")
+            yield Static(
+                "Choose your LLM inference backend. Local Ollama uses\n"
+                "the models you just downloaded. External providers require\n"
+                "an API key and will route queries to the cloud.",
+                id="api-explanation",
+            )
+
+            # Provider selection
+            yield Label("[bold]LLM Backend:[/bold]", id="provider-label")
+            with RadioSet(id="provider-radio"):
+                yield RadioButton("Local Ollama", value=True, id="radio-ollama")
+                yield RadioButton("OpenRouter", id="radio-openrouter")
+                yield RadioButton("NVIDIA NIM", id="radio-nvidia-nim")
+
+            # API Key input (hidden for Ollama)
+            with Vertical(id="api-key-section"):
+                yield Label("[bold]API Key:[/bold]", id="api-key-label")
+                yield Input(
+                    placeholder="Enter your API key...",
+                    password=True,
+                    id="api-key-input",
+                )
+
+            # Model override input
+            with Vertical(id="model-override-section"):
+                yield Label(
+                    "[bold]Model Override:[/bold] [dim](leave blank for default)[/dim]",
+                    id="model-override-label",
+                )
+                yield Input(
+                    placeholder="e.g. meta-llama/llama-3.1-8b-instruct",
+                    id="model-override-input",
+                )
+
+            # Connection test
+            with Vertical(id="test-section"):
+                yield Label("", id="test-status-label")
+
+            with Horizontal(id="api-action-buttons"):
+                yield Button(
+                    "🔌 Test Connection",
+                    id="test-btn",
+                )
+                yield Button(
+                    "Save & Continue →",
+                    id="save-btn",
+                    variant="primary",
+                )
+
+        yield Footer()
+
+    def on_mount(self) -> None:
+        """Initialize UI state based on current app state."""
+        # Hide API key section for Ollama (default)
+        self.query_one("#api-key-section").display = False
+
+        # Pre-populate model override from state if available
+        state = self.app.state
+        if state.model_name:
+            self.query_one("#model-override-input", Input).value = state.model_name
+
+    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        """React to provider radio button changes."""
+        radio_id = event.pressed.id
+
+        if radio_id == "radio-ollama":
+            self._selected_provider = "ollama"
+            self.query_one("#api-key-section").display = False
+            self.query_one("#model-override-input", Input).placeholder = (
+                "e.g. qwen2.5:7b (uses downloaded model)"
+            )
+            # Set model from downloaded models if available
+            if self.app.state.downloaded_models:
+                self.query_one("#model-override-input", Input).value = (
+                    self.app.state.downloaded_models[0]
+                )
+            elif self.app.state.model_name:
+                self.query_one("#model-override-input", Input).value = (
+                    self.app.state.model_name
+                )
+
+        elif radio_id == "radio-openrouter":
+            self._selected_provider = "openrouter"
+            self.query_one("#api-key-section").display = True
+            self.query_one("#api-key-input", Input).placeholder = (
+                "sk-or-... (OpenRouter API key)"
+            )
+            self.query_one("#model-override-input", Input).placeholder = (
+                "e.g. meta-llama/llama-3.1-8b-instruct"
+            )
+            self.query_one("#model-override-input", Input).value = (
+                self.DEFAULT_MODELS["openrouter"]
+            )
+
+        elif radio_id == "radio-nvidia-nim":
+            self._selected_provider = "nvidia_nim"
+            self.query_one("#api-key-section").display = True
+            self.query_one("#api-key-input", Input).placeholder = (
+                "nvapi-... (NVIDIA NIM API key)"
+            )
+            self.query_one("#model-override-input", Input).placeholder = (
+                "e.g. meta/llama-3.1-8b-instruct"
+            )
+            self.query_one("#model-override-input", Input).value = (
+                self.DEFAULT_MODELS["nvidia_nim"]
+            )
+
+        # Clear test status on provider change
+        self.query_one("#test-status-label", Label).update("")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "test-btn":
+            self._test_connection()
+        elif event.button.id == "save-btn":
+            self._save_and_continue()
+
+    @work
+    async def _test_connection(self) -> None:
+        """Test connectivity to the selected LLM provider."""
+        status_label = self.query_one("#test-status-label", Label)
+        status_label.update("[bold cyan]🔄 Testing connection...[/bold cyan]")
+
+        api_key = self.query_one("#api-key-input", Input).value
+        model = self.query_one("#model-override-input", Input).value
+
+        try:
+            from core.llm_router import LLMRouter, LLMRouterConfig, LLMProvider
+
+            provider = LLMProvider(self._selected_provider)
+
+            config = LLMRouterConfig(
+                provider=provider,
+                model_name=model or "",
+                api_key=api_key,
+            )
+
+            router = LLMRouter(config)
+            success, message = await router.test_connection()
+            await router.close()
+
+            if success:
+                status_label.update(
+                    f"[bold green]✅ {message}[/bold green]"
+                )
+            else:
+                status_label.update(
+                    f"[bold red]❌ {message}[/bold red]"
+                )
+
+        except Exception as exc:
+            status_label.update(
+                f"[bold red]❌ Error: {exc}[/bold red]"
+            )
+
+    def _save_and_continue(self) -> None:
+        """Save settings to .env and app state, then advance."""
+        state = self.app.state
+
+        api_key = self.query_one("#api-key-input", Input).value.strip()
+        model_override = self.query_one("#model-override-input", Input).value.strip()
+
+        state.llm_provider = self._selected_provider
+        state.api_key = api_key
+
+        if model_override:
+            state.model_name = model_override
+            if self._selected_provider != "ollama":
+                state.external_model = model_override
+
+        # Write to .env
+        project_root = Path(os.getcwd())
+        env_path = project_root / ".env"
+
+        from tui.utils.docker_manager import generate_env_file
+
+        generate_env_file(state, filepath=str(env_path))
+
+        self.app.push_screen("deployment")

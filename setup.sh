@@ -1,14 +1,57 @@
 #!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────
+# setup.sh — Zero-Touch Setup Wizard for smart-db
+#
+# Handles: Package manager detection, Docker install, NVIDIA
+#          GPU detection, nvidia-container-toolkit auto-install,
+#          Docker group membership, venv creation, and TUI launch.
+# ─────────────────────────────────────────────────────────────
 set -e
 
-echo "Starting Zero-Touch Setup Wizard for smart-db..."
+echo ""
+echo "══════════════════════════════════════════════"
+echo "  🚀 smart-db — Zero-Touch Setup Wizard"
+echo "══════════════════════════════════════════════"
+echo ""
 
-# Helper to check if a command exists
+# ── Helpers ──────────────────────────────────────────────────
+info()  { echo "   ℹ️  $*"; }
+ok()    { echo "   ✅ $*"; }
+warn()  { echo "   ⚠️  $*"; }
+fail()  { echo "   ❌ $*"; exit 1; }
+step()  { echo ""; echo "── $* ──────────────────────────────"; }
+
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Determine package manager
+# ── OS Detection ─────────────────────────────────────────────
+if [[ -f /etc/os-release ]]; then
+    # shellcheck source=/dev/null
+    source /etc/os-release
+    DISTRO_ID="${ID}"
+    DISTRO_ID_LIKE="${ID_LIKE:-}"
+    DISTRO_PRETTY="${PRETTY_NAME:-${ID}}"
+else
+    DISTRO_ID="unknown"
+    DISTRO_ID_LIKE=""
+    DISTRO_PRETTY="Unknown OS"
+fi
+info "Detected OS: ${DISTRO_PRETTY}"
+
+# ── Determine base distro family ─────────────────────────────
+is_debian_family() {
+    [[ "${DISTRO_ID}" =~ ^(ubuntu|debian|linuxmint|pop|zorin|elementary|neon|astra)$ ]] ||
+    [[ "${DISTRO_ID_LIKE}" == *"debian"* ]] ||
+    [[ "${DISTRO_ID_LIKE}" == *"ubuntu"* ]]
+}
+
+is_arch_family() {
+    [[ "${DISTRO_ID}" =~ ^(arch|endeavouros|manjaro|garuda|artix)$ ]] ||
+    [[ "${DISTRO_ID_LIKE}" == *"arch"* ]]
+}
+
+# ── Determine package manager ────────────────────────────────
 PKG_MANAGER=""
 if command_exists apt-get; then
     PKG_MANAGER="apt-get"
@@ -17,13 +60,13 @@ elif command_exists dnf; then
 elif command_exists pacman; then
     PKG_MANAGER="pacman"
 else
-    echo "Error: Unsupported package manager. Please install dependencies manually."
-    exit 1
+    fail "Unsupported package manager. Please install dependencies manually."
 fi
+info "Package manager: ${PKG_MANAGER}"
 
 install_package() {
     local package=$1
-    echo "Installing ${package}..."
+    info "Installing ${package}..."
     if [ "$PKG_MANAGER" = "apt-get" ]; then
         sudo apt-get update -qq && sudo apt-get install -y "$package"
     elif [ "$PKG_MANAGER" = "dnf" ]; then
@@ -33,10 +76,15 @@ install_package() {
     fi
 }
 
-# 1. Dependency checks and auto-installation
+# ═════════════════════════════════════════════════════════════
+# 1. CORE DEPENDENCY CHECKS
+# ═════════════════════════════════════════════════════════════
+step "1/6  Core dependency pre-flight"
+
 if ! command_exists python3; then
     install_package python3
 fi
+ok "python3 found: $(python3 --version 2>&1)"
 
 # For Debian/Ubuntu, python3-venv is often required separately
 if [ "$PKG_MANAGER" = "apt-get" ]; then
@@ -48,9 +96,15 @@ fi
 if ! command_exists curl; then
     install_package curl
 fi
+ok "curl found"
+
+# ═════════════════════════════════════════════════════════════
+# 2. DOCKER INSTALLATION
+# ═════════════════════════════════════════════════════════════
+step "2/6  Docker pre-flight"
 
 if ! command_exists docker || ! docker compose version >/dev/null 2>&1; then
-    echo "Docker or Docker Compose V2 is missing. Starting auto-install..."
+    warn "Docker or Docker Compose V2 is missing. Starting auto-install..."
     if [ "$PKG_MANAGER" = "apt-get" ] || [ "$PKG_MANAGER" = "dnf" ]; then
         curl -fsSL https://get.docker.com -o get-docker.sh
         sudo sh get-docker.sh
@@ -58,29 +112,153 @@ if ! command_exists docker || ! docker compose version >/dev/null 2>&1; then
     elif [ "$PKG_MANAGER" = "pacman" ]; then
         sudo pacman -Sy --noconfirm docker docker-buildx docker-compose
     fi
+    command_exists docker || fail "Docker binary not found after installation."
+    ok "Docker installed: $(docker --version 2>/dev/null)"
+else
+    ok "Docker already installed: $(docker --version 2>/dev/null)"
 fi
 
-# 2. Ensure Docker Daemon is started
+# ═════════════════════════════════════════════════════════════
+# 3. DOCKER DAEMON
+# ═════════════════════════════════════════════════════════════
+step "3/6  Docker daemon"
+
 if command_exists systemctl; then
     if ! systemctl is-active --quiet docker; then
-        echo "Starting Docker service..."
+        info "Starting Docker service..."
         sudo systemctl enable --now docker
+    fi
+    ok "Docker daemon is running."
+else
+    warn "systemctl not found — assuming Docker daemon is managed externally."
+fi
+
+# ═════════════════════════════════════════════════════════════
+# 4. DOCKER GROUP MEMBERSHIP
+# ═════════════════════════════════════════════════════════════
+step "4/6  Docker group membership"
+
+if groups "$USER" 2>/dev/null | grep -qw docker; then
+    ok "User '${USER}' is already in the 'docker' group."
+else
+    warn "User '${USER}' is NOT in the 'docker' group."
+    info "Adding '${USER}' to the 'docker' group..."
+    sudo usermod -aG docker "$USER"
+    ok "Added '${USER}' to 'docker' group."
+    echo ""
+    warn "╔══════════════════════════════════════════════════════════╗"
+    warn "║  You MUST log out and log back in (or reboot) for the   ║"
+    warn "║  docker group change to take effect.                    ║"
+    warn "║                                                         ║"
+    warn "║  After re-login, re-run: ./setup.sh                     ║"
+    warn "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+fi
+
+# Quick smoke test — try without sudo first, fall back to sudo
+if ! docker ps >/dev/null 2>&1; then
+    if ! sudo docker ps >/dev/null 2>&1; then
+        warn "Cannot connect to Docker daemon. You may need to re-login for group changes."
+        info "Attempting to proceed..."
+        sleep 2
+    else
+        info "Docker requires sudo — group changes may not have taken effect yet."
     fi
 fi
 
-# Warn if docker requires sudo (user not in docker group)
-if ! docker ps >/dev/null 2>&1; then
-    echo "Warning: Cannot connect to docker daemon. You may need to run this script with sudo or add your user to the docker group."
-    echo "Attempting to proceed..."
-    sleep 2
+# ═════════════════════════════════════════════════════════════
+# 5. NVIDIA GPU DETECTION & CONTAINER TOOLKIT
+# ═════════════════════════════════════════════════════════════
+step "5/6  NVIDIA GPU & Container Toolkit"
+
+NVIDIA_GPU_FOUND=false
+
+# Detect NVIDIA GPU via lspci
+if command_exists lspci; then
+    if lspci | grep -qi nvidia; then
+        NVIDIA_GPU_FOUND=true
+        ok "NVIDIA GPU detected via lspci."
+    fi
+else
+    # Fallback: try nvidia-smi directly
+    if command_exists nvidia-smi; then
+        NVIDIA_GPU_FOUND=true
+        ok "NVIDIA GPU detected via nvidia-smi."
+    fi
 fi
 
-echo "All prerequisites met. Setting up virtual environment..."
+if [ "$NVIDIA_GPU_FOUND" = true ]; then
+    # ── Check if nvidia-container-toolkit is installed ────────
+    if command_exists nvidia-ctk; then
+        ok "nvidia-container-toolkit is already installed."
+    else
+        warn "nvidia-container-toolkit is NOT installed. Starting OS-aware auto-install..."
 
-# 3. Create .venv if it doesn't exist
+        if is_debian_family; then
+            info "Using Debian/Ubuntu installation path..."
+
+            # Add NVIDIA GPG key
+            info "Adding NVIDIA GPG key..."
+            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+                | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null
+
+            # Add NVIDIA container toolkit repository
+            info "Adding NVIDIA container toolkit repository..."
+            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+                | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+                | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
+
+            # Install the toolkit
+            sudo apt-get update -qq
+            sudo apt-get install -y nvidia-container-toolkit
+
+        elif is_arch_family; then
+            info "Using Arch Linux installation path..."
+            sudo pacman -Sy --noconfirm nvidia-container-toolkit
+
+        else
+            warn "Unsupported distro '${DISTRO_PRETTY}' for automatic nvidia-container-toolkit install."
+            warn "Please install nvidia-container-toolkit manually:"
+            warn "  https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
+        fi
+
+        # Verify installation
+        if command_exists nvidia-ctk; then
+            ok "nvidia-container-toolkit installed successfully."
+        else
+            warn "nvidia-container-toolkit installation may have failed. Continuing anyway..."
+        fi
+    fi
+
+    # ── Configure Docker runtime for NVIDIA ──────────────────
+    if command_exists nvidia-ctk; then
+        info "Configuring NVIDIA container runtime for Docker..."
+        sudo nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
+        ok "NVIDIA runtime configured."
+
+        # Restart Docker to pick up the new runtime
+        if command_exists systemctl; then
+            info "Restarting Docker daemon to apply NVIDIA runtime..."
+            sudo systemctl restart docker
+            ok "Docker restarted with NVIDIA GPU support."
+        fi
+    fi
+else
+    info "No NVIDIA GPU detected. Skipping container toolkit setup."
+    info "The system will use CPU-only mode for LLM inference."
+fi
+
+# ═════════════════════════════════════════════════════════════
+# 6. PYTHON VIRTUAL ENVIRONMENT & TUI LAUNCH
+# ═════════════════════════════════════════════════════════════
+step "6/6  Python environment & TUI launch"
+
+# Create .venv if it doesn't exist
 if [ ! -d ".venv" ]; then
+    info "Creating virtual environment..."
     python3 -m venv .venv
 fi
+ok "Virtual environment ready."
 
 # Activate virtual environment
 source .venv/bin/activate
@@ -89,9 +267,14 @@ source .venv/bin/activate
 python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
 
 # Install required dependencies
-echo "Installing Python dependencies (textual, python-dotenv)..."
-pip install textual python-dotenv >/dev/null 2>&1
+info "Installing Python dependencies..."
+pip install -r requirements.txt >/dev/null 2>&1
+ok "All Python dependencies installed."
 
-# 4. Execute the Textual TUI entry point
-echo "Launching Setup Wizard..."
+# Launch the TUI
+echo ""
+echo "══════════════════════════════════════════════"
+echo "  ✨ Launching Setup Wizard..."
+echo "══════════════════════════════════════════════"
+echo ""
 python3 -m tui.app

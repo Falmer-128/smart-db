@@ -3,6 +3,9 @@
 env/
 venv/
 
+# Hardware state registry (machine-specific, not committed)
+models_registry.json
+
 # Кэш Python
 __pycache__/
 *.pyc

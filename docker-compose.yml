@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   ollama:
     image: ollama/ollama:latest
@@ -16,24 +14,6 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-
-  ollama-puller:
-    image: curlimages/curl:latest
-    container_name: ollama-puller
-    depends_on:
-      - ollama
-    # Wait for Ollama to be available, then pull the model passed via the UI-generated .env
-    entrypoint: ["sh", "-c"]
-    command: 
-      - |
-        while ! curl -s http://ollama:11434 > /dev/null; do
-          echo 'Waiting for Ollama to become ready...'
-          sleep 2
-        done
-        echo 'Ollama is ready. Starting download for model: ${LLM_MODEL}'
-        curl -s -X POST http://ollama:11434/api/pull -d '{"name":"${LLM_MODEL}"}'
-        echo ""
-        echo 'Model pull sequence completed successfully!'
 
   anythingllm:
     image: mintplexlabs/anythingllm:latest
