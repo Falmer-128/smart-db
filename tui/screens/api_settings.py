@@ -206,6 +206,7 @@ class APISettingsScreen(Screen):
         model_override = self.query_one("#model-override-input", Input).value.strip()
 
         state.llm_provider = self._selected_provider
+        state.backend = self._selected_provider
         state.api_key = api_key
 
         if model_override:

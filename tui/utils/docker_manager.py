@@ -5,6 +5,8 @@ import logging
 import os
 from typing import AsyncGenerator, Any, Callable
 
+from dataclasses import dataclass
+
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -14,56 +16,53 @@ OLLAMA_STARTUP_TIMEOUT = 30  # seconds
 OLLAMA_POLL_INTERVAL = 1.0   # seconds
 
 
-async def ensure_ollama_running(
-    cwd: str | None = None,
-    log_callback: Callable[[str], None] | None = None,
-    cancel_event: asyncio.Event | None = None,
-) -> tuple[bool, str]:
-    """
-    Lazily start the Ollama container and wait until its API is healthy.
+@dataclass
+class DockerStatus:
+    success: bool
+    message: str
 
-    1. Runs ``docker compose up -d ollama`` (async, non-blocking).
-    2. Polls ``GET http://localhost:11434/`` every second until it
-       returns HTTP 200 or the timeout (30 s) expires.
 
-    Parameters
-    ----------
-    cwd : str | None
-        Working directory containing ``docker-compose.yml``.
-        Defaults to the current working directory.
-    log_callback : Callable[[str], None] | None
-        Optional callback to stream output (e.g. from docker pull).
-    cancel_event : asyncio.Event | None
-        Optional event to signal cancellation during the docker pull process.
+class DockerManager:
+    def __init__(self):
+        self._cancel_event = asyncio.Event()
 
-    Returns
-    -------
-    (success, message)
-        ``success`` is True when the Ollama API is confirmed alive.
-    """
-    if cwd is None:
-        cwd = os.getcwd()
+    def abort_all(self):
+        """Trigger cancellation for any running operations."""
+        self._cancel_event.set()
 
-    # ── Check if image exists ────────────────────────────────
-    check_proc = await asyncio.create_subprocess_exec(
-        "docker", "images", "-q", "ollama/ollama",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    stdout, _ = await check_proc.communicate()
-    image_exists = bool(stdout.strip())
+    def reset_cancellation(self):
+        """Reset the cancellation event for a new operation."""
+        self._cancel_event.clear()
 
-    if not image_exists:
-        max_attempts = 5
-        pull_success = False
+    async def ensure_ollama_running(
+        self,
+        cwd: str | None = None,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> DockerStatus:
+        """
+        Lazily start the Ollama container and wait until its API is healthy.
 
-        for attempt in range(1, max_attempts + 1):
-            if attempt == 1:
-                if log_callback:
-                    log_callback("Pulling ollama/ollama base image...\n")
-            else:
-                if log_callback:
-                    log_callback(f"⚠️ Connection stalled. Reconnecting and resuming download (Attempt {attempt}/{max_attempts})...\n")
+        1. Runs ``docker compose up -d ollama`` (async, non-blocking).
+        2. Polls ``GET http://localhost:11434/`` every second until it
+           returns HTTP 200 or the timeout (30 s) expires.
+        """
+        if cwd is None:
+            cwd = os.getcwd()
+
+        self.reset_cancellation()
+
+        # ── Check if image exists ────────────────────────────────
+        check_proc = await asyncio.create_subprocess_exec(
+            "docker", "images", "-q", "ollama/ollama",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await check_proc.communicate()
+        image_exists = bool(stdout.strip())
+
+        if not image_exists:
+            if log_callback:
+                log_callback("Pulling ollama/ollama base image...\n")
 
             pull_proc = await asyncio.create_subprocess_exec(
                 "docker", "pull", "ollama/ollama",
@@ -73,38 +72,26 @@ async def ensure_ollama_running(
 
             if pull_proc.stdout:
                 while True:
-                    try:
-                        if cancel_event:
-                            read_task = asyncio.create_task(pull_proc.stdout.readline())
-                            cancel_task = asyncio.create_task(cancel_event.wait())
-                            done, pending = await asyncio.wait(
-                                [read_task, cancel_task],
-                                timeout=45.0,
-                                return_when=asyncio.FIRST_COMPLETED
-                            )
-                            
-                            if not done:
-                                pull_proc.kill()
-                                for p in pending:
-                                    p.cancel()
-                                break
-                            
-                            if cancel_task in done:
-                                pull_proc.kill()
-                                for p in pending:
-                                    p.cancel()
-                                return False, "Cancelled by user"
-                            
-                            line = read_task.result()
-                            for p in pending:
-                                p.cancel()
-                        else:
-                            line = await asyncio.wait_for(
-                                pull_proc.stdout.readline(), timeout=45.0
-                            )
-                    except asyncio.TimeoutError:
-                        pull_proc.kill()
-                        break
+                    read_task = asyncio.create_task(pull_proc.stdout.readline())
+                    cancel_task = asyncio.create_task(self._cancel_event.wait())
+                    done, pending = await asyncio.wait(
+                        [read_task, cancel_task],
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+                    
+                    if cancel_task in done:
+                        # Skip pressed: send SIGTERM (signal 15) so the
+                        # Docker daemon can gracefully clean up its cache
+                        # and avoid deadlocks / corrupted containerd snapshots.
+                        for p in pending:
+                            p.cancel()
+                        pull_proc.terminate()       # SIGTERM — NOT .kill() (SIGKILL)
+                        await pull_proc.wait()       # wait for graceful exit
+                        return DockerStatus(False, "Cancelled by user")
+                    
+                    line = read_task.result()
+                    for p in pending:
+                        p.cancel()
                     
                     if not line:
                         break
@@ -113,44 +100,43 @@ async def ensure_ollama_running(
                         log_callback(line.decode(errors='replace'))
             
             await pull_proc.wait()
-            if pull_proc.returncode == 0:
-                pull_success = True
-                break
-        
-        if not pull_success:
-            return False, f"Failed to pull ollama/ollama image after {max_attempts} attempts."
+            if pull_proc.returncode != 0:
+                return DockerStatus(False, "Failed to pull ollama/ollama image.")
 
-    # ── Step 1: Start the container ──────────────────────────
-    proc = await asyncio.create_subprocess_shell(
-        "docker compose up -d ollama 2>&1",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=cwd,
-    )
-    stdout, _ = await proc.communicate()
-    output = stdout.decode().strip() if stdout else ""
+        # ── Step 1: Start the container ──────────────────────────
+        proc = await asyncio.create_subprocess_shell(
+            "docker compose --profile local up -d ollama 2>&1",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+        )
+        stdout, _ = await proc.communicate()
+        output = stdout.decode().strip() if stdout else ""
 
-    if proc.returncode != 0:
-        return False, f"docker compose failed (exit {proc.returncode}): {output}"
+        if proc.returncode != 0:
+            return DockerStatus(False, f"docker compose failed (exit {proc.returncode}): {output}")
 
-    # ── Step 2: Poll until the API is alive ──────────────────
-    elapsed = 0.0
-    async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
-        while elapsed < OLLAMA_STARTUP_TIMEOUT:
-            try:
-                resp = await client.get(OLLAMA_HEALTH_URL)
-                if resp.status_code == 200:
-                    return True, "Ollama is ready."
-            except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout):
-                pass  # Not up yet — keep polling
+        # ── Step 2: Poll until the API is alive ──────────────────
+        elapsed = 0.0
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
+            while elapsed < OLLAMA_STARTUP_TIMEOUT:
+                if self._cancel_event.is_set():
+                    return DockerStatus(False, "Cancelled by user")
+                
+                try:
+                    resp = await client.get(OLLAMA_HEALTH_URL)
+                    if resp.status_code == 200:
+                        return DockerStatus(True, "Ollama is ready.")
+                except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout):
+                    pass  # Not up yet — keep polling
 
-            await asyncio.sleep(OLLAMA_POLL_INTERVAL)
-            elapsed += OLLAMA_POLL_INTERVAL
+                await asyncio.sleep(OLLAMA_POLL_INTERVAL)
+                elapsed += OLLAMA_POLL_INTERVAL
 
-    return False, (
-        f"Ollama did not respond within {OLLAMA_STARTUP_TIMEOUT}s. "
-        "Check `docker compose logs ollama` for details."
-    )
+        return DockerStatus(False, 
+            f"Ollama did not respond within {OLLAMA_STARTUP_TIMEOUT}s. "
+            "Check `docker compose logs ollama` for details."
+        )
 
 
 
@@ -197,13 +183,34 @@ def generate_env_file(state: Any, filepath: str = ".env") -> None:
         f.write("\n".join(lines))
 
 
-async def run_docker_compose_up(cwd: str = ".") -> AsyncGenerator[str, None]:
+async def run_docker_compose_up(
+    cwd: str = ".",
+    services: list[str] | None = None,
+) -> AsyncGenerator[str, None]:
     """
     Runs docker compose up -d --build and yields combined stdout/stderr lines.
-    2>&1 redirects stderr to stdout so we can stream it all sequentially.
+
+    Parameters
+    ----------
+    cwd : str
+        Working directory containing docker-compose.yml.
+    services : list[str] | None
+        Explicit list of services to start. When *None*, every service
+        defined in the compose file is started (default Docker behaviour).
     """
+    # When starting ollama (or all services), activate the 'local' profile
+    # so the profiled ollama service is included.
+    needs_local_profile = services is None or "ollama" in services
+    cmd = "docker compose"
+    if needs_local_profile:
+        cmd += " --profile local"
+    cmd += " up -d --build"
+    if services:
+        cmd += " " + " ".join(services)
+    cmd += " 2>&1"
+
     process = await asyncio.create_subprocess_shell(
-        "docker compose up -d --build 2>&1",
+        cmd,
         stdout=asyncio.subprocess.PIPE,
         cwd=cwd,
     )

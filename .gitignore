@@ -31,3 +31,4 @@ OUTPUT/*
 # Системные файлы (если потом будешь открывать на Windows/Mac)
 .DS_Store
 Thumbs.dboutput.txt
+.env

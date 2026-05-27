@@ -265,3 +265,34 @@ Scrollbar {
 #processing-indicator.visible {
     display: block;
 }
+
+/* ── Model Selection Screen ──────────────────────────────── */
+
+#model-panel {
+    height: 1fr;
+}
+
+#model-list {
+    height: 1fr;
+    max-height: 12;
+}
+
+.button-row {
+    height: 3;
+    min-height: 3;
+}
+
+#progress-area {
+    height: 1fr;
+    max-height: 15;
+    overflow-y: auto;
+}
+
+#docker-log {
+    height: 1fr;
+}
+
+#nav-actions {
+    dock: bottom;
+    height: 3;
+}

@@ -1,3 +1,4 @@
+import asyncio
 import os
 from textual.app import ComposeResult
 from textual.screen import Screen
@@ -50,16 +51,18 @@ class DeploymentScreen(Screen):
     async def start_deployment(self) -> None:
         """
         Writes the .env and runs docker-compose asynchronously.
-        Because this runs on the main event loop (without thread=True),
-        we can safely update Textual widgets directly using `await`.
+
+        When the backend is an external API (openrouter / nvidia_nim),
+        only the ``anythingllm`` service is started — the ``ollama``
+        container is not pulled or launched.
         """
         log = self.query_one("#docker-log", RichLog)
         state = self.app.state
-        
+
         # Determine the project root assuming the script is run from the root
         project_root = os.getcwd()
         env_path = os.path.join(project_root, ".env")
-        
+
         log.write("[bold yellow]Generating .env file...[/bold yellow]")
         try:
             generate_env_file(state, filepath=env_path)
@@ -69,17 +72,49 @@ class DeploymentScreen(Screen):
             self.query_one("#launch_btn", Button).disabled = False
             return
 
+        # ── Pre-flight cleanup ────────────────────────────────────
+        # Remove the broken named volume from previous failed attempts
+        # (it was a directory mounted onto a file path, causing OCI errors).
+        log.write("\n[dim]Cleaning up stale volumes...[/dim]")
+        cleanup_proc = await asyncio.create_subprocess_shell(
+            "docker volume rm smart-db_anythingllm_env 2>/dev/null || true",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=project_root,
+        )
+        await cleanup_proc.communicate()
+
+        # Ensure .env exists as a real file on the host.  Docker will
+        # auto-create it as a *directory* if the source doesn't exist,
+        # which causes an OCI runtime mount error.
+        if not os.path.isfile(env_path):
+            log.write("[dim]Creating empty .env placeholder...[/dim]")
+            open(env_path, "a").close()
+
+        # Decide which services to bring up based on the backend
+        backend = getattr(state, "backend", "ollama")
+        if backend in ("openrouter", "nvidia_nim"):
+            services = ["anythingllm"]
+            log.write(
+                f"\n[bold cyan]Backend is '{backend}' — "
+                f"skipping local Ollama container.[/bold cyan]"
+            )
+        else:
+            services = None  # start everything (ollama + anythingllm)
+
         log.write("\n[bold yellow]Starting Docker containers...[/bold yellow]")
-        
+
         try:
             # Stream docker output directly into the RichLog
-            async for line in run_docker_compose_up(cwd=project_root):
+            async for line in run_docker_compose_up(cwd=project_root, services=services):
                 log.write(line)
-                
+
             log.write("\n[bold green]✅ Docker deployment completed successfully![/bold green]")
             self.query_one("#finish_btn", Button).disabled = False
-            self.query_one("#deploy-summary", Static).update("[bold green]All systems go![/bold green] Click 'Finish Setup' to exit the wizard.")
-            
+            self.query_one("#deploy-summary", Static).update(
+                "[bold green]All systems go![/bold green] Click 'Finish Setup' to exit the wizard."
+            )
+
         except Exception as e:
             log.write(f"\n[bold red]❌ Deployment failed:[/bold red] {e}")
             self.query_one("#launch_btn", Button).disabled = False

@@ -3,7 +3,11 @@ Model Selection Screen — interactive model download with progress tracking.
 
 Uses a SelectionList for multi-select, httpx for async streaming downloads
 from the Ollama API, and a ProgressBar for real-time feedback. Supports
-play/pause via httpx task cancellation (Ollama retains partial layers).
+cancellation via Docker SIGTERM for graceful daemon cleanup.
+
+UI is composed STATICALLY. State transitions are managed EXCLUSIVELY
+by toggling ``button.disabled``.  No ``ContentSwitcher`` or
+``display = False`` is used anywhere.
 """
 
 from __future__ import annotations
@@ -11,6 +15,7 @@ from __future__ import annotations
 import json
 import asyncio
 import logging
+from enum import Enum
 from typing import Any
 
 import httpx
@@ -29,9 +34,17 @@ from textual.widgets import (
 from textual.containers import Horizontal, Vertical
 from textual import work
 
+from tui.utils.docker_manager import DockerManager
+
 logger = logging.getLogger(__name__)
 
 OLLAMA_BASE_URL = "http://localhost:11434"
+
+
+class DownloadState(Enum):
+    IDLE = 1
+    DOWNLOADING = 2
+    FINISHED = 3
 
 
 class ModelSelectionScreen(Screen):
@@ -43,74 +56,78 @@ class ModelSelectionScreen(Screen):
         self._download_cancelled = False
         self._download_queue: list[str] = []
         self._current_model: str = ""
-        self._cancel_event = asyncio.Event()
+        self.docker_manager = DockerManager()
+        self.current_state = DownloadState.IDLE
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(classes="panel", id="model-panel"):
             yield Static("🤖 Model Selection", classes="title")
             yield Static(
-                "Select models to download. Only models that fit in your "
-                "VRAM are listed.\nThe recommended model is pre-selected.",
+                "Select models to download. Only models that fit in your VRAM are listed.\nThe recommended model is pre-selected.",
                 id="model-explanation",
             )
 
-            # SelectionList — populated on mount
             yield SelectionList[str](id="model-list")
 
-            with Horizontal(id="download-buttons"):
-                yield Button(
-                    "⭐ Download Recommended",
-                    id="dl-recommended-btn",
-                    variant="primary",
-                )
-                yield Button(
-                    "📥 Download Selected",
-                    id="dl-selected-btn",
-                )
-                yield Button(
-                    "📦 Download All Suitable",
-                    id="dl-all-btn",
-                )
+            # ── Static action panel: ALL buttons live here permanently ──
+            with Horizontal(id="action-panel", classes="button-row"):
+                yield Button("⭐ Download Recommended", id="dl-recommended-btn", variant="primary")
+                yield Button("📥 Download Selected", id="dl-selected-btn")
+                yield Button("📦 Download All Suitable", id="dl-all-btn")
+                yield Button("⏭ Skip (Use Cloud API)", id="skip-btn", variant="error", disabled=False)
+                yield Button("Continue to API Settings →", id="continue-btn", variant="success", disabled=True)
 
-            # Download progress area
+            # ── Progress area: always present, content updated in-place ──
             with Vertical(id="progress-area"):
-                yield RichLog(id="docker-log", markup=True)
                 yield Label("", id="dl-status-label")
                 yield ProgressBar(id="dl-progress", total=100, show_eta=False)
                 yield Label("", id="dl-detail-label")
-
-            with Horizontal(id="control-buttons"):
-                yield Button(
-                    "⏸ Pause",
-                    id="pause-btn",
-                    disabled=True,
-                )
-                yield Button(
-                    "▶ Resume",
-                    id="resume-btn",
-                    disabled=True,
-                )
-                yield Button(
-                    "⏭ Skip (Use Cloud API)",
-                    id="skip-btn",
-                    variant="error",
-                    disabled=True,
-                )
-                yield Button(
-                    "Continue to API Settings →",
-                    id="continue-btn",
-                    variant="primary",
-                    disabled=True,
-                )
+                yield RichLog(id="docker-log", markup=True)
 
         yield Footer()
 
+    # ── UI State Machine ─────────────────────────────────────
+
+    def update_ui_state(self, state: DownloadState) -> None:
+        """Transition UI by toggling button.disabled — nothing else."""
+        self.current_state = state
+
+        dl_rec = self.query_one("#dl-recommended-btn", Button)
+        dl_sel = self.query_one("#dl-selected-btn", Button)
+        dl_all = self.query_one("#dl-all-btn", Button)
+        skip   = self.query_one("#skip-btn", Button)
+        cont   = self.query_one("#continue-btn", Button)
+
+        if state == DownloadState.IDLE:
+            dl_rec.disabled = False
+            dl_sel.disabled = False
+            dl_all.disabled = False
+            skip.disabled   = False
+            self._update_continue_btn()
+
+        elif state == DownloadState.DOWNLOADING:
+            dl_rec.disabled = True
+            dl_sel.disabled = True
+            dl_all.disabled = True
+            skip.disabled   = False   # user can always skip during download
+
+            cont.disabled   = True
+
+        elif state == DownloadState.FINISHED:
+            dl_rec.disabled = False
+            dl_sel.disabled = False
+            dl_all.disabled = False
+            skip.disabled   = True
+            self._update_continue_btn()
+
+    def _update_continue_btn(self) -> None:
+        downloaded = getattr(self.app.state, "downloaded_models", [])
+        if downloaded:
+            self.query_one("#continue-btn", Button).disabled = False
+
     def on_mount(self) -> None:
         """Populate the selection list from the hardware scan results."""
-        self.query_one("#progress-area").display = False
-        self.query_one("#docker-log").display = False
-
         selection_list = self.query_one("#model-list", SelectionList)
         models = self.app.state.available_models
 
@@ -137,14 +154,12 @@ class ModelSelectionScreen(Screen):
                     break
                 ui_index += 1
 
-
         # If no models fit, disable download buttons
         fitting = [m for m in models if m.get("fits", False)]
         if not fitting:
             self.query_one("#dl-recommended-btn", Button).disabled = True
             self.query_one("#dl-selected-btn", Button).disabled = True
             self.query_one("#dl-all-btn", Button).disabled = True
-            self.query_one("#skip-btn", Button).disabled = False
             self.query_one("#continue-btn", Button).disabled = False
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -156,10 +171,6 @@ class ModelSelectionScreen(Screen):
             self._start_download_selected()
         elif btn_id == "dl-all-btn":
             self._start_download_all()
-        elif btn_id == "pause-btn":
-            self._pause_download()
-        elif btn_id == "resume-btn":
-            self._resume_download()
         elif btn_id == "skip-btn":
             self._skip_download()
         elif btn_id == "continue-btn":
@@ -196,78 +207,61 @@ class ModelSelectionScreen(Screen):
     async def _begin_download_queue(self, model_names: list[str]) -> None:
         """
         Ensure Ollama is running (lazy start), then process the queue.
-
-        On-demand approach: the Ollama container is only started when the
-        user actually initiates a download, saving GPU resources if they
-        only intend to use a cloud API provider.
         """
         self._download_queue = list(model_names)
         self._download_cancelled = False
 
-        # Disable download buttons while we spin up
-        self.query_one("#dl-recommended-btn", Button).disabled = True
-        self.query_one("#dl-selected-btn", Button).disabled = True
-        self.query_one("#dl-all-btn", Button).disabled = True
-        self.query_one("#pause-btn", Button).disabled = False
-        self.query_one("#resume-btn", Button).disabled = True
-        self.query_one("#skip-btn", Button).disabled = False
-        self.query_one("#progress-area").display = True
+        self.app.call_from_thread(self.update_ui_state, DownloadState.DOWNLOADING)
 
-        # ── Lazy-start Ollama ────────────────────────────────
         status_label = self.query_one("#dl-status-label", Label)
         detail_label = self.query_one("#dl-detail-label", Label)
         docker_log = self.query_one("#docker-log", RichLog)
 
-        status_label.update(
-            "[bold cyan]🔄 Starting Ollama Engine...[/bold cyan]"
-        )
-        detail_label.update(
-            "[dim]Launching container and waiting for API readiness...[/dim]"
-        )
+        self.app.call_from_thread(docker_log.clear)
+        progress = self.query_one("#dl-progress", ProgressBar)
+        self.app.call_from_thread(progress.update, total=100, progress=0)
 
-        def _show_and_log(line: str) -> None:
-            docker_log.display = True
-            docker_log.write(line.rstrip("\n"))
+        self.app.call_from_thread(
+            status_label.update,
+            "[bold cyan]🔄 Starting Ollama Engine...[/bold cyan]",
+        )
+        self.app.call_from_thread(
+            detail_label.update,
+            "[dim]Launching container and waiting for API readiness...[/dim]",
+        )
 
         def log_callback(line: str) -> None:
-            _show_and_log(line)
+            # Safely schedule log updates in the main thread
+            self.app.call_from_thread(docker_log.write, line.rstrip("\n"))
 
-        from tui.utils.docker_manager import ensure_ollama_running
-
-        success, message = await ensure_ollama_running(
-            log_callback=log_callback,
-            cancel_event=self._cancel_event,
+        docker_status = await self.docker_manager.ensure_ollama_running(
+            log_callback=log_callback
         )
-        
-        # Hide log widget after successful pull/startup
-        docker_log.display = False
 
-        if not success:
-            if message == "Cancelled by user":
-                status_label.update("[bold yellow]⏸ Docker pull paused[/bold yellow]")
-                detail_label.update("")
-                self.query_one("#pause-btn", Button).disabled = True
-                self.query_one("#resume-btn", Button).disabled = False
+        if not docker_status.success:
+            if docker_status.message == "Cancelled by user":
+                # Skip was clicked — state transition handled in _skip_download
                 return
             else:
-                status_label.update(
-                    "[bold red]❌ Failed to start Ollama[/bold red]"
+                self.app.call_from_thread(
+                    status_label.update,
+                    "[bold red]❌ Failed to start Ollama[/bold red]",
                 )
-                detail_label.update(f"[bold red]{message}[/bold red]")
-                # Re-enable buttons so user can retry
-                self.query_one("#dl-recommended-btn", Button).disabled = False
-                self.query_one("#dl-selected-btn", Button).disabled = False
-                self.query_one("#dl-all-btn", Button).disabled = False
-                self.query_one("#skip-btn", Button).disabled = True
+                self.app.call_from_thread(
+                    detail_label.update,
+                    f"[bold red]{docker_status.message}[/bold red]",
+                )
+                # Brief pause so the user can read the error
+                await asyncio.sleep(2)
+                self.app.call_from_thread(self.update_ui_state, DownloadState.IDLE)
                 return
 
-        status_label.update(
-            "[bold green]✅ Ollama is ready![/bold green]"
+        self.app.call_from_thread(
+            status_label.update,
+            "[bold green]✅ Ollama is ready![/bold green]",
         )
-        detail_label.update("")
+        self.app.call_from_thread(detail_label.update, "")
 
-        # ── Proceed with downloads ───────────────────────────
-        self.query_one("#pause-btn", Button).disabled = False
         await self._process_download_queue()
 
     async def _process_download_queue(self) -> None:
@@ -278,41 +272,37 @@ class ModelSelectionScreen(Screen):
 
             status_label = self.query_one("#dl-status-label", Label)
             remaining = len(self._download_queue)
-            status_label.update(
+
+            self.app.call_from_thread(
+                status_label.update,
                 f"[bold cyan]Downloading:[/bold cyan] {model_name}"
-                + (f"  [dim]({remaining} more in queue)[/dim]" if remaining else "")
+                + (f"  [dim]({remaining} more in queue)[/dim]" if remaining else ""),
             )
 
             progress = self.query_one("#dl-progress", ProgressBar)
-            progress.update(total=100, progress=0)
+            self.app.call_from_thread(progress.update, total=100, progress=0)
 
             success = await self._download_model(model_name)
 
+            detail_label = self.query_one("#dl-detail-label", Label)
             if success:
                 if model_name not in self.app.state.downloaded_models:
                     self.app.state.downloaded_models.append(model_name)
-                self.query_one("#dl-detail-label", Label).update(
-                    f"[bold green]✅ {model_name} downloaded successfully![/bold green]"
+                self.app.call_from_thread(
+                    detail_label.update,
+                    f"[bold green]✅ {model_name} downloaded successfully![/bold green]",
                 )
             elif self._download_cancelled:
-                self.query_one("#dl-detail-label", Label).update(
-                    f"[bold yellow]⏸ {model_name} paused[/bold yellow]"
-                )
-                # Re-insert at front for resume
-                self._download_queue.insert(0, model_name)
                 break
             else:
-                self.query_one("#dl-detail-label", Label).update(
-                    f"[bold red]❌ {model_name} download failed[/bold red]"
+                self.app.call_from_thread(
+                    detail_label.update,
+                    f"[bold red]❌ {model_name} download failed[/bold red]",
                 )
 
-        # Queue finished or paused
-        if not self._download_queue or not self._download_cancelled:
-            self._download_finished()
-        else:
-            # Paused state
-            self.query_one("#pause-btn", Button).disabled = True
-            self.query_one("#resume-btn", Button).disabled = False
+        # Queue finished
+        if not self._download_cancelled:
+            self.app.call_from_thread(self._download_finished)
 
     async def _download_model(self, model_name: str) -> bool:
         """
@@ -354,89 +344,72 @@ class ModelSelectionScreen(Screen):
                         # Update progress bar
                         if total > 0:
                             pct = int((completed / total) * 100)
-                            progress.update(total=100, progress=pct)
+                            self.app.call_from_thread(progress.update, total=100, progress=pct)
 
                             # Human-readable sizes
                             total_gb = total / (1024 ** 3)
                             done_gb = completed / (1024 ** 3)
-                            detail_label.update(
+                            self.app.call_from_thread(
+                                detail_label.update,
                                 f"[dim]{status}[/dim]  "
-                                f"{done_gb:.2f} GB / {total_gb:.2f} GB"
+                                f"{done_gb:.2f} GB / {total_gb:.2f} GB",
                             )
                         else:
-                            detail_label.update(f"[dim]{status}[/dim]")
+                            self.app.call_from_thread(detail_label.update, f"[dim]{status}[/dim]")
 
             # If we get here without cancellation, it's a success
-            progress.update(total=100, progress=100)
+            self.app.call_from_thread(progress.update, total=100, progress=100)
             return True
 
         except httpx.ConnectError:
-            detail_label.update(
+            self.app.call_from_thread(
+                detail_label.update,
                 "[bold red]Cannot connect to Ollama at "
                 f"{OLLAMA_BASE_URL}[/bold red]\n"
-                "[dim]Make sure Ollama is running: docker compose up ollama[/dim]"
+                "[dim]Make sure Ollama is running: docker compose up ollama[/dim]",
             )
             return False
         except httpx.HTTPStatusError as exc:
-            detail_label.update(
+            self.app.call_from_thread(
+                detail_label.update,
                 f"[bold red]HTTP {exc.response.status_code}[/bold red]: "
-                f"{exc.response.text[:200]}"
+                f"{exc.response.text[:200]}",
             )
             return False
         except Exception as exc:
             logger.exception("Unexpected error downloading %s", model_name)
-            detail_label.update(f"[bold red]Error:[/bold red] {exc}")
+            self.app.call_from_thread(detail_label.update, f"[bold red]Error:[/bold red] {exc}")
             return False
 
-    # ── Play / Pause ─────────────────────────────────────────
-
-    def _pause_download(self) -> None:
-        """Pause the current download by signalling cancellation."""
-        self._download_cancelled = True
-        self._cancel_event.set()
-        self.query_one("#pause-btn", Button).disabled = True
-        self.query_one("#dl-status-label", Label).update(
-            f"[bold yellow]Pausing {self._current_model or 'Docker pull'}...[/bold yellow]"
-        )
-
-    def _resume_download(self) -> None:
-        """Resume downloading from where we left off."""
-        self._download_cancelled = False
-        self._cancel_event.clear()
-        self.query_one("#resume-btn", Button).disabled = True
-        self.query_one("#pause-btn", Button).disabled = False
-        # Re-run from the top (ensure_ollama_running is idempotent)
-        self._begin_download_queue(self._download_queue)
+    # ── Skip ─────────────────────────────────────────────────
 
     def _skip_download(self) -> None:
-        """Skip downloading and proceed to cloud API setup."""
+        """Skip all downloading and proceed to cloud API setup."""
         self._download_cancelled = True
-        self._cancel_event.set()
+        self.docker_manager.abort_all()
         self._download_queue.clear()
+
+        # Transition: disable skip, enable continue
+        self.query_one("#skip-btn", Button).disabled = True
+        self.query_one("#continue-btn", Button).disabled = False
+
         self.app.push_screen("api_settings")
+
+    # ── Completion ───────────────────────────────────────────
 
     def _download_finished(self) -> None:
         """Clean up UI state after all downloads complete."""
-        self.query_one("#pause-btn", Button).disabled = True
-        self.query_one("#resume-btn", Button).disabled = True
-        self.query_one("#skip-btn", Button).disabled = True
+        self.update_ui_state(DownloadState.FINISHED)
 
-        # Re-enable download buttons
-        self.query_one("#dl-recommended-btn", Button).disabled = False
-        self.query_one("#dl-selected-btn", Button).disabled = False
-        self.query_one("#dl-all-btn", Button).disabled = False
+        status_label = self.query_one("#dl-status-label", Label)
 
-        # Enable continue
-        downloaded = self.app.state.downloaded_models
+        downloaded = getattr(self.app.state, "downloaded_models", [])
         if downloaded:
-            self.query_one("#continue-btn", Button).disabled = False
-            self.query_one("#dl-status-label", Label).update(
+            status_label.update(
                 f"[bold green]✅ {len(downloaded)} model(s) ready![/bold green]"
             )
         else:
-            # Allow continue even without downloads (user may use external LLM)
-            self.query_one("#continue-btn", Button).disabled = False
-            self.query_one("#dl-status-label", Label).update(
+            status_label.update(
                 "[bold yellow]No models downloaded. "
                 "You can configure an external LLM provider next.[/bold yellow]"
             )

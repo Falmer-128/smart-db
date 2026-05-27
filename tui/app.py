@@ -61,7 +61,7 @@ class SetupWizardApp(App):
         border-title-color: #111111;
         padding: 1 2;
         margin: 2 4;
-        height: auto;
+        height: 1fr;
     }
 
     .title {
@@ -74,7 +74,7 @@ class SetupWizardApp(App):
 
     Button {
         width: 1fr;
-        margin: 1 2;
+        margin: 0 1;
     }
 
     Button.-primary {
@@ -126,7 +126,7 @@ class SetupWizardApp(App):
 
     #docker-log {
         height: 1fr;
-        min-height: 15;
+        max-height: 10;
         border: solid #00ffcc;
         margin: 1 0;
         background: #000000;
@@ -136,20 +136,21 @@ class SetupWizardApp(App):
     /* ── Model Selection Screen ──────────────────────────── */
 
     #model-list {
-        height: auto;
-        max-height: 16;
+        height: 1fr;
+        max-height: 10;
         margin: 1 0;
         border: solid #333333;
         background: #1a1a2e;
     }
 
-    #download-buttons {
+    #action-panel {
         height: auto;
+        min-height: 3;
         align: center middle;
     }
 
-    #download-buttons Button {
-        min-width: 24;
+    #action-panel Button {
+        min-width: 20;
     }
 
     #progress-area {
@@ -157,7 +158,8 @@ class SetupWizardApp(App):
         padding: 1 2;
         border: solid #333333;
         background: #1a1a2e;
-        height: auto;
+        height: 1fr;
+        max-height: 12;
     }
 
     #dl-status-label {

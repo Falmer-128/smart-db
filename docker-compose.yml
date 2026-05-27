@@ -3,6 +3,8 @@ services:
     image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
+    profiles:
+      - local
     ports:
       - "11434:11434"
     volumes:
@@ -21,17 +23,13 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3001"
-    depends_on:
-      - ollama
     volumes:
       - anythingllm_storage:/app/server/storage
-      - anythingllm_env:/app/server/.env
+      - ./.env:/app/server/.env
     environment:
-      # Use the internal docker network to connect to Ollama
-      - LLM_PROVIDER=ollama
+      - LLM_PROVIDER=${LLM_BACKEND:-ollama}
       - OLLAMA_BASE_PATH=http://ollama:11434
 
 volumes:
   ollama_data:
   anythingllm_storage:
-  anythingllm_env:
