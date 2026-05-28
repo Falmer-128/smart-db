@@ -96,14 +96,71 @@ class APISettingsScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        """Initialize UI state based on current app state."""
+        """Initialize UI state based on current app state and existing .env file."""
         # Hide API key section for Ollama (default)
         self.query_one("#api-key-section").display = False
 
-        # Pre-populate model override from state if available
         state = self.app.state
-        if state.model_name:
-            self.query_one("#model-override-input", Input).value = state.model_name
+        env_vars = {}
+
+        # 1. Parse existing .env file
+        try:
+            env_path = os.path.join(os.getcwd(), ".env")
+            if os.path.isfile(env_path):
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            try:
+                                key, value = line.split("=", 1)
+                                env_vars[key.strip()] = value.strip()
+                            except ValueError:
+                                pass
+        except Exception:
+            pass  # Silently fail if malformed or missing
+
+        # 2. Map parsed variables to UI
+        backend = env_vars.get("LLM_BACKEND", "ollama")
+        
+        # Select the correct radio button. This will enqueue a RadioSet.Changed event.
+        if backend == "openrouter":
+            self.query_one("#radio-openrouter", RadioButton).value = True
+        elif backend == "nvidia_nim":
+            self.query_one("#radio-nvidia-nim", RadioButton).value = True
+        else:
+            self.query_one("#radio-ollama", RadioButton).value = True
+
+        # Use call_later to populate the text inputs *after* the RadioSet.Changed 
+        # event handler has executed. Otherwise, the event handler will overwrite 
+        # our pre-filled values with the DEFAULT_MODELS.
+        def populate_inputs() -> None:
+            api_key_input = self.query_one("#api-key-input", Input)
+            model_override_input = self.query_one("#model-override-input", Input)
+
+            if backend == "openrouter":
+                api_key = env_vars.get("OPENROUTER_API_KEY", "")
+                if api_key:
+                    api_key_input.value = api_key
+                model = env_vars.get("OPENROUTER_MODEL") or env_vars.get("LLM_MODEL", "")
+                if model:
+                    model_override_input.value = model
+
+            elif backend == "nvidia_nim":
+                api_key = env_vars.get("NVIDIA_NIM_API_KEY", "")
+                if api_key:
+                    api_key_input.value = api_key
+                model = env_vars.get("NVIDIA_NIM_MODEL") or env_vars.get("LLM_MODEL", "")
+                if model:
+                    model_override_input.value = model
+
+            else:
+                model = env_vars.get("LLM_MODEL", "")
+                if model:
+                    model_override_input.value = model
+                elif state.model_name:
+                    model_override_input.value = state.model_name
+
+        self.call_later(populate_inputs)
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         """React to provider radio button changes."""
