@@ -211,28 +211,26 @@ class ModelSelectionScreen(Screen):
         self._download_queue = list(model_names)
         self._download_cancelled = False
 
-        self.app.call_from_thread(self.update_ui_state, DownloadState.DOWNLOADING)
+        self.update_ui_state(DownloadState.DOWNLOADING)
 
         status_label = self.query_one("#dl-status-label", Label)
         detail_label = self.query_one("#dl-detail-label", Label)
         docker_log = self.query_one("#docker-log", RichLog)
 
-        self.app.call_from_thread(docker_log.clear)
+        docker_log.clear()
         progress = self.query_one("#dl-progress", ProgressBar)
-        self.app.call_from_thread(progress.update, total=100, progress=0)
+        progress.update(total=100, progress=0)
 
-        self.app.call_from_thread(
-            status_label.update,
+        status_label.update(
             "[bold cyan]🔄 Starting Ollama Engine...[/bold cyan]",
         )
-        self.app.call_from_thread(
-            detail_label.update,
+        detail_label.update(
             "[dim]Launching container and waiting for API readiness...[/dim]",
         )
 
         def log_callback(line: str) -> None:
             # Safely schedule log updates in the main thread
-            self.app.call_from_thread(docker_log.write, line.rstrip("\n"))
+            docker_log.write(line.rstrip("\n"))
 
         docker_status = await self.docker_manager.ensure_ollama_running(
             log_callback=log_callback
@@ -243,24 +241,21 @@ class ModelSelectionScreen(Screen):
                 # Skip was clicked — state transition handled in _skip_download
                 return
             else:
-                self.app.call_from_thread(
-                    status_label.update,
+                status_label.update(
                     "[bold red]❌ Failed to start Ollama[/bold red]",
                 )
-                self.app.call_from_thread(
-                    detail_label.update,
+                detail_label.update(
                     f"[bold red]{docker_status.message}[/bold red]",
                 )
                 # Brief pause so the user can read the error
                 await asyncio.sleep(2)
-                self.app.call_from_thread(self.update_ui_state, DownloadState.IDLE)
+                self.update_ui_state(DownloadState.IDLE)
                 return
 
-        self.app.call_from_thread(
-            status_label.update,
+        status_label.update(
             "[bold green]✅ Ollama is ready![/bold green]",
         )
-        self.app.call_from_thread(detail_label.update, "")
+        detail_label.update("")
 
         await self._process_download_queue()
 
@@ -273,14 +268,13 @@ class ModelSelectionScreen(Screen):
             status_label = self.query_one("#dl-status-label", Label)
             remaining = len(self._download_queue)
 
-            self.app.call_from_thread(
-                status_label.update,
+            status_label.update(
                 f"[bold cyan]Downloading:[/bold cyan] {model_name}"
                 + (f"  [dim]({remaining} more in queue)[/dim]" if remaining else ""),
             )
 
             progress = self.query_one("#dl-progress", ProgressBar)
-            self.app.call_from_thread(progress.update, total=100, progress=0)
+            progress.update(total=100, progress=0)
 
             success = await self._download_model(model_name)
 
@@ -288,21 +282,19 @@ class ModelSelectionScreen(Screen):
             if success:
                 if model_name not in self.app.state.downloaded_models:
                     self.app.state.downloaded_models.append(model_name)
-                self.app.call_from_thread(
-                    detail_label.update,
+                detail_label.update(
                     f"[bold green]✅ {model_name} downloaded successfully![/bold green]",
                 )
             elif self._download_cancelled:
                 break
             else:
-                self.app.call_from_thread(
-                    detail_label.update,
+                detail_label.update(
                     f"[bold red]❌ {model_name} download failed[/bold red]",
                 )
 
         # Queue finished
         if not self._download_cancelled:
-            self.app.call_from_thread(self._download_finished)
+            self._download_finished()
 
     async def _download_model(self, model_name: str) -> bool:
         """
@@ -344,41 +336,38 @@ class ModelSelectionScreen(Screen):
                         # Update progress bar
                         if total > 0:
                             pct = int((completed / total) * 100)
-                            self.app.call_from_thread(progress.update, total=100, progress=pct)
+                            progress.update(total=100, progress=pct)
 
                             # Human-readable sizes
                             total_gb = total / (1024 ** 3)
                             done_gb = completed / (1024 ** 3)
-                            self.app.call_from_thread(
-                                detail_label.update,
+                            detail_label.update(
                                 f"[dim]{status}[/dim]  "
                                 f"{done_gb:.2f} GB / {total_gb:.2f} GB",
                             )
                         else:
-                            self.app.call_from_thread(detail_label.update, f"[dim]{status}[/dim]")
+                            detail_label.update(f"[dim]{status}[/dim]")
 
             # If we get here without cancellation, it's a success
-            self.app.call_from_thread(progress.update, total=100, progress=100)
+            progress.update(total=100, progress=100)
             return True
 
         except httpx.ConnectError:
-            self.app.call_from_thread(
-                detail_label.update,
+            detail_label.update(
                 "[bold red]Cannot connect to Ollama at "
                 f"{OLLAMA_BASE_URL}[/bold red]\n"
                 "[dim]Make sure Ollama is running: docker compose up ollama[/dim]",
             )
             return False
         except httpx.HTTPStatusError as exc:
-            self.app.call_from_thread(
-                detail_label.update,
+            detail_label.update(
                 f"[bold red]HTTP {exc.response.status_code}[/bold red]: "
                 f"{exc.response.text[:200]}",
             )
             return False
         except Exception as exc:
             logger.exception("Unexpected error downloading %s", model_name)
-            self.app.call_from_thread(detail_label.update, f"[bold red]Error:[/bold red] {exc}")
+            detail_label.update(f"[bold red]Error:[/bold red] {exc}")
             return False
 
     # ── Skip ─────────────────────────────────────────────────

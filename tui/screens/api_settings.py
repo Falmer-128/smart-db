@@ -34,6 +34,7 @@ class APISettingsScreen(Screen):
         "ollama": "",
         "openrouter": "meta-llama/llama-3.1-8b-instruct",
         "nvidia_nim": "meta/llama-3.1-8b-instruct",
+        "google_gemini": "gemini-1.5-pro-latest",
     }
 
     def __init__(self) -> None:
@@ -57,6 +58,7 @@ class APISettingsScreen(Screen):
                 yield RadioButton("Local Ollama", value=True, id="radio-ollama")
                 yield RadioButton("OpenRouter", id="radio-openrouter")
                 yield RadioButton("NVIDIA NIM", id="radio-nvidia-nim")
+                yield RadioButton("Google (Gemini)", id="radio-google-gemini")
 
             # API Key input (hidden for Ollama)
             with Vertical(id="api-key-section"):
@@ -127,6 +129,8 @@ class APISettingsScreen(Screen):
             self.query_one("#radio-openrouter", RadioButton).value = True
         elif backend == "nvidia_nim":
             self.query_one("#radio-nvidia-nim", RadioButton).value = True
+        elif backend == "google_gemini":
+            self.query_one("#radio-google-gemini", RadioButton).value = True
         else:
             self.query_one("#radio-ollama", RadioButton).value = True
 
@@ -150,6 +154,14 @@ class APISettingsScreen(Screen):
                 if api_key:
                     api_key_input.value = api_key
                 model = env_vars.get("NVIDIA_NIM_MODEL") or env_vars.get("LLM_MODEL", "")
+                if model:
+                    model_override_input.value = model
+
+            elif backend == "google_gemini":
+                api_key = env_vars.get("GEMINI_API_KEY", "")
+                if api_key:
+                    api_key_input.value = api_key
+                model = env_vars.get("GEMINI_MODEL") or env_vars.get("LLM_MODEL", "")
                 if model:
                     model_override_input.value = model
 
@@ -206,6 +218,19 @@ class APISettingsScreen(Screen):
             )
             self.query_one("#model-override-input", Input).value = (
                 self.DEFAULT_MODELS["nvidia_nim"]
+            )
+
+        elif radio_id == "radio-google-gemini":
+            self._selected_provider = "google_gemini"
+            self.query_one("#api-key-section").display = True
+            self.query_one("#api-key-input", Input).placeholder = (
+                "AIzaSy... (Gemini API key)"
+            )
+            self.query_one("#model-override-input", Input).placeholder = (
+                "e.g. gemini-1.5-pro-latest"
+            )
+            self.query_one("#model-override-input", Input).value = (
+                self.DEFAULT_MODELS["google_gemini"]
             )
 
         # Clear test status on provider change

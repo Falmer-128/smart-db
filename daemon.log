@@ -1,0 +1,161 @@
+2026-06-01 09:13:49 │ INFO    │ ingestion_daemon │ 🚀 Starting Ingestion, Extraction, and Triage Daemon
+2026-06-01 09:13:49 │ INFO    │ ingestion_daemon │ Verified directory: /home/mint/smart-db/INPUT
+2026-06-01 09:13:49 │ INFO    │ ingestion_daemon │ Verified directory: /home/mint/smart-db/PROCESSED
+2026-06-01 09:13:49 │ INFO    │ ingestion_daemon │ Verified directory: /home/mint/smart-db/OUTPUT
+2026-06-01 09:13:49 │ INFO    │ ingestion_daemon │ 👀 Now monitoring /home/mint/smart-db/INPUT for new files...
+2026-06-01 09:16:16 │ INFO    │ core.ingestion_handler │ Processing new file: ! 20260515 форма 51_оборуд на контр.xlsx
+2026-06-01 09:16:16 │ INFO    │ core.ingestion_handler │ Checking for duplicates: ! 20260515 форма 51_оборуд на контр.xlsx
+2026-06-01 09:16:16 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: ! 20260515 форма 51_оборуд на контр.xlsx
+2026-06-01 09:16:17 │ INFO    │ core.ingestion_handler │ Processing new file: 00 2013 Отчет по ЭМС ПС Первомайка (Изм.1).pdf
+2026-06-01 09:16:17 │ INFO    │ core.ingestion_handler │ Checking for duplicates: 00 2013 Отчет по ЭМС ПС Первомайка (Изм.1).pdf
+2026-06-01 09:16:17 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: 00 2013 Отчет по ЭМС ПС Первомайка (Изм.1).pdf
+2026-06-01 09:16:18 │ INFO    │ core.ingestion_handler │ Processing new file: 25_28012025 Гибкая система льгот.zip
+2026-06-01 09:16:18 │ INFO    │ core.ingestion_handler │ Archive detected: 25_28012025 Гибкая система льгот.zip. Extracting...
+2026-06-01 09:16:18 │ INFO    │ core.archive_extractor │ Successfully extracted archive 25_28012025 Гибкая система льгот.zip to /home/mint/smart-db/INPUT
+2026-06-01 09:16:19 │ INFO    │ core.ingestion_handler │ Extraction successful. Deleting original archive: 25_28012025 Гибкая система льгот.zip
+2026-06-01 09:16:20 │ INFO    │ core.ingestion_handler │ Processing new file: 39_07022025 Памятки и инструктаж водителю и пассажиру.zip
+2026-06-01 09:16:20 │ INFO    │ core.ingestion_handler │ Archive detected: 39_07022025 Памятки и инструктаж водителю и пассажиру.zip. Extracting...
+2026-06-01 09:16:20 │ INFO    │ core.archive_extractor │ Successfully extracted archive 39_07022025 Памятки и инструктаж водителю и пассажиру.zip to /home/mint/smart-db/INPUT
+2026-06-01 09:16:20 │ INFO    │ core.ingestion_handler │ Extraction successful. Deleting original archive: 39_07022025 Памятки и инструктаж водителю и пассажиру.zip
+2026-06-01 09:16:21 │ INFO    │ core.ingestion_handler │ Processing new file: aid-7050.pdf
+2026-06-01 09:16:21 │ INFO    │ core.ingestion_handler │ Checking for duplicates: aid-7050.pdf
+2026-06-01 09:16:21 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: aid-7050.pdf
+2026-06-01 09:16:22 │ INFO    │ core.ingestion_handler │ Processing new file: CoroCAM 7 корокам.pdf
+2026-06-01 09:16:22 │ INFO    │ core.ingestion_handler │ Checking for duplicates: CoroCAM 7 корокам.pdf
+2026-06-01 09:16:22 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: CoroCAM 7 корокам.pdf
+2026-06-01 09:16:23 │ INFO    │ core.ingestion_handler │ Processing new file: export за 2025.XLSX
+2026-06-01 09:16:23 │ INFO    │ core.ingestion_handler │ Checking for duplicates: export за 2025.XLSX
+2026-06-01 09:16:23 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: export за 2025.XLSX
+2026-06-01 09:16:24 │ INFO    │ core.ingestion_handler │ Processing new file: IMG20230912123149.jpg
+2026-06-01 09:16:24 │ INFO    │ core.ingestion_handler │ Checking for duplicates: IMG20230912123149.jpg
+2026-06-01 09:16:24 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: IMG20230912123149.jpg
+2026-06-01 09:16:25 │ INFO    │ core.ingestion_handler │ Processing new file: inbox.7z
+2026-06-01 09:16:25 │ INFO    │ core.ingestion_handler │ Archive detected: inbox.7z. Extracting...
+2026-06-01 09:16:25 │ INFO    │ core.archive_extractor │ Successfully extracted archive inbox.7z to /home/mint/smart-db/INPUT
+2026-06-01 09:16:25 │ INFO    │ core.ingestion_handler │ Extraction successful. Deleting original archive: inbox.7z
+2026-06-01 09:16:26 │ INFO    │ core.ingestion_handler │ Processing new file: Vitok-1 РЭ.pdf
+2026-06-01 09:16:26 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Vitok-1 РЭ.pdf
+2026-06-01 09:16:26 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Vitok-1 РЭ.pdf
+2026-06-01 09:16:27 │ INFO    │ core.ingestion_handler │ Processing new file: Акт проверки АЗ НПетр.pdf
+2026-06-01 09:16:27 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Акт проверки АЗ НПетр.pdf
+2026-06-01 09:16:27 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Акт проверки АЗ НПетр.pdf
+2026-06-01 09:16:28 │ INFO    │ core.ingestion_handler │ Processing new file: Аргаяшск doc13313020250416102044.pdf
+2026-06-01 09:16:28 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Аргаяшск doc13313020250416102044.pdf
+2026-06-01 09:16:28 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Аргаяшск doc13313020250416102044.pdf
+2026-06-01 09:16:29 │ INFO    │ core.ingestion_handler │ Processing new file: В.А. Обвинцеву 2021.doc
+2026-06-01 09:16:29 │ INFO    │ core.ingestion_handler │ Checking for duplicates: В.А. Обвинцеву 2021.doc
+2026-06-01 09:16:29 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: В.А. Обвинцеву 2021.doc
+2026-06-01 09:16:30 │ INFO    │ core.ingestion_handler │ Processing new file: В.А. Обвинцеву АИД в ремонт 202405 согл.docx
+2026-06-01 09:16:30 │ INFO    │ core.ingestion_handler │ Checking for duplicates: В.А. Обвинцеву АИД в ремонт 202405 согл.docx
+2026-06-01 09:16:30 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: В.А. Обвинцеву АИД в ремонт 202405 согл.docx
+2026-06-01 09:16:31 │ INFO    │ core.ingestion_handler │ Processing new file: В.А. Обвинцеву АИД УПК в ремонт согл.docx
+2026-06-01 09:16:31 │ INFO    │ core.ingestion_handler │ Checking for duplicates: В.А. Обвинцеву АИД УПК в ремонт согл.docx
+2026-06-01 09:16:31 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: В.А. Обвинцеву АИД УПК в ремонт согл.docx
+2026-06-01 09:16:32 │ INFO    │ core.ingestion_handler │ Processing new file: В.А. Обвинцеву КороКам в ремонт 202309 согл.docx
+2026-06-01 09:16:32 │ INFO    │ core.ingestion_handler │ Checking for duplicates: В.А. Обвинцеву КороКам в ремонт 202309 согл.docx
+2026-06-01 09:16:32 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: В.А. Обвинцеву КороКам в ремонт 202309 согл.docx
+2026-06-01 09:16:33 │ INFO    │ core.ingestion_handler │ Processing new file: В.А. Обвинцеву Корокам согл.docx
+2026-06-01 09:16:33 │ INFO    │ core.ingestion_handler │ Checking for duplicates: В.А. Обвинцеву Корокам согл.docx
+2026-06-01 09:16:33 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: В.А. Обвинцеву Корокам согл.docx
+2026-06-01 09:16:34 │ INFO    │ core.ingestion_handler │ Processing new file: В.А. Обвинцеву латр согл.docx
+2026-06-01 09:16:34 │ INFO    │ core.ingestion_handler │ Checking for duplicates: В.А. Обвинцеву латр согл.docx
+2026-06-01 09:16:34 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: В.А. Обвинцеву латр согл.docx
+2026-06-01 09:16:35 │ INFO    │ core.ingestion_handler │ Processing new file: В.А. Обвинцеву приборы в ремонт 202307 cjuk.docx
+2026-06-01 09:16:35 │ INFO    │ core.ingestion_handler │ Checking for duplicates: В.А. Обвинцеву приборы в ремонт 202307 cjuk.docx
+2026-06-01 09:16:35 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: В.А. Обвинцеву приборы в ремонт 202307 cjuk.docx
+2026-06-01 09:16:36 │ INFO    │ core.ingestion_handler │ Processing new file: В.А. Обвинцеву Тангенс2000 в ремонт Феникс.docx
+2026-06-01 09:16:36 │ INFO    │ core.ingestion_handler │ Checking for duplicates: В.А. Обвинцеву Тангенс2000 в ремонт Феникс.docx
+2026-06-01 09:16:36 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: В.А. Обвинцеву Тангенс2000 в ремонт Феникс.docx
+2026-06-01 09:16:37 │ INFO    │ core.ingestion_handler │ Processing new file: !! Проект к согласованию с изм _09.01.2025_режим редактир_3.docx
+2026-06-01 09:16:37 │ INFO    │ core.ingestion_handler │ Checking for duplicates: !! Проект к согласованию с изм _09.01.2025_режим редактир_3.docx
+2026-06-01 09:16:37 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: !! Проект к согласованию с изм _09.01.2025_режим редактир_3.docx
+2026-06-01 09:16:38 │ INFO    │ core.ingestion_handler │ Processing new file: Приложение к приказу. Изменения в Положение_3_6-0.docx
+2026-06-01 09:16:38 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Приложение к приказу. Изменения в Положение_3_6-0.docx
+2026-06-01 09:16:38 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Приложение к приказу. Изменения в Положение_3_6-0.docx
+2026-06-01 09:16:39 │ INFO    │ core.ingestion_handler │ Processing new file: Приказ № 25 от 22.01.2025 - О внес. изм. в ПЛ РС-ДУПиОП-31-2024.pdf
+2026-06-01 09:16:39 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Приказ № 25 от 22.01.2025 - О внес. изм. в ПЛ РС-ДУПиОП-31-2024.pdf
+2026-06-01 09:16:39 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Приказ № 25 от 22.01.2025 - О внес. изм. в ПЛ РС-ДУПиОП-31-2024.pdf
+2026-06-01 09:16:40 │ INFO    │ core.ingestion_handler │ Processing new file: Лист регистрации изменений к ПЛ РС-ДУПиОП-31-2024 к Положению о Гибкая система корпорат льгот (2).docx
+2026-06-01 09:16:40 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Лист регистрации изменений к ПЛ РС-ДУПиОП-31-2024 к Положению о Гибкая система корпорат льгот (2).docx
+2026-06-01 09:16:40 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Лист регистрации изменений к ПЛ РС-ДУПиОП-31-2024 к Положению о Гибкая система корпорат льгот (2).docx
+2026-06-01 09:16:41 │ INFO    │ core.ingestion_handler │ Processing new file: Приказ изменение Положения о гибких льготах_3-0_4-0_5-0.doc
+2026-06-01 09:16:41 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Приказ изменение Положения о гибких льготах_3-0_4-0_5-0.doc
+2026-06-01 09:16:41 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Приказ изменение Положения о гибких льготах_3-0_4-0_5-0.doc
+2026-06-01 09:16:42 │ INFO    │ core.ingestion_handler │ Processing new file: Приказ №39 от 31.01.2025 О повышении ответственности соблюдения правил дорожного движения водителями и пассажирами.pdf
+2026-06-01 09:16:42 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Приказ №39 от 31.01.2025 О повышении ответственности соблюдения правил дорожного движения водителями и пассажирами.pdf
+2026-06-01 09:16:42 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Приказ №39 от 31.01.2025 О повышении ответственности соблюдения правил дорожного движения водителями и пассажирами.pdf
+2026-06-01 09:16:43 │ INFO    │ core.ingestion_handler │ Processing new file: О повышении ответственности соблюдения ПДД....docx
+2026-06-01 09:16:43 │ INFO    │ core.ingestion_handler │ Checking for duplicates: О повышении ответственности соблюдения ПДД....docx
+2026-06-01 09:16:43 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: О повышении ответственности соблюдения ПДД....docx
+2026-06-01 09:16:44 │ INFO    │ core.ingestion_handler │ Processing new file: Приложение 1 ПАМЯТКА водителю (печать двухсторонняя)..docx
+2026-06-01 09:16:44 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Приложение 1 ПАМЯТКА водителю (печать двухсторонняя)..docx
+2026-06-01 09:16:44 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Приложение 1 ПАМЯТКА водителю (печать двухсторонняя)..docx
+2026-06-01 09:16:45 │ INFO    │ core.ingestion_handler │ Processing new file: Приложение 2 Памятка для пассажиров автомобиля..docx
+2026-06-01 09:16:45 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Приложение 2 Памятка для пассажиров автомобиля..docx
+2026-06-01 09:16:45 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Приложение 2 Памятка для пассажиров автомобиля..docx
+2026-06-01 09:16:46 │ INFO    │ core.ingestion_handler │ Processing new file: Приложение 4 Обязанности пассажиров.docx
+2026-06-01 09:16:46 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Приложение 4 Обязанности пассажиров.docx
+2026-06-01 09:16:46 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Приложение 4 Обязанности пассажиров.docx
+2026-06-01 09:16:47 │ INFO    │ core.ingestion_handler │ Processing new file: Приложение 3 Форма отчета о результатах выполнения мероприятий.docx
+2026-06-01 09:16:47 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Приложение 3 Форма отчета о результатах выполнения мероприятий.docx
+2026-06-01 09:16:47 │ WARNING │ core.ingestion_handler │ Duplicate detected. Deleting: Приложение 3 Форма отчета о результатах выполнения мероприятий.docx
+2026-06-01 09:17:30 │ INFO    │ core.ingestion_handler │ Processing new file: ИФН-200 руководство.pdf
+2026-06-01 09:17:30 │ INFO    │ core.ingestion_handler │ Checking for duplicates: ИФН-200 руководство.pdf
+2026-06-01 09:17:30 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: ИФН-200 руководство.pdf
+2026-06-01 09:17:31 │ INFO    │ core.ingestion_handler │ Processing new file: Кыш Инст.pdf
+2026-06-01 09:17:31 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Кыш Инст.pdf
+2026-06-01 09:17:31 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Кыш Инст.pdf
+2026-06-01 09:17:32 │ INFO    │ core.ingestion_handler │ Processing new file: Лазурная В110 Межозерная.pdf
+2026-06-01 09:17:32 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Лазурная В110 Межозерная.pdf
+2026-06-01 09:17:32 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Лазурная В110 Межозерная.pdf
+2026-06-01 09:17:33 │ INFO    │ core.ingestion_handler │ Processing new file: Лазурная ввод В110 Межозерная фАвл ХАРГ 2025.pdf
+2026-06-01 09:17:33 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Лазурная ввод В110 Межозерная фАвл ХАРГ 2025.pdf
+2026-06-01 09:17:33 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Лазурная ввод В110 Межозерная фАвл ХАРГ 2025.pdf
+2026-06-01 09:17:34 │ INFO    │ core.ingestion_handler │ Processing new file: Лазурная ТН110 2сш фА ХАРГ 2025.pdf
+2026-06-01 09:17:34 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Лазурная ТН110 2сш фА ХАРГ 2025.pdf
+2026-06-01 09:17:34 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Лазурная ТН110 2сш фА ХАРГ 2025.pdf
+2026-06-01 09:17:35 │ INFO    │ core.ingestion_handler │ Processing new file: Лазурная ТН-110кВ 2сш фС.pdf
+2026-06-01 09:17:35 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Лазурная ТН-110кВ 2сш фС.pdf
+2026-06-01 09:17:35 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Лазурная ТН-110кВ 2сш фС.pdf
+2026-06-01 09:17:36 │ INFO    │ core.ingestion_handler │ Processing new file: ПЗ 2025 02.docx
+2026-06-01 09:17:36 │ INFO    │ core.ingestion_handler │ Checking for duplicates: ПЗ 2025 02.docx
+2026-06-01 09:17:36 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: ПЗ 2025 02.docx
+2026-06-01 09:17:37 │ INFO    │ core.ingestion_handler │ Processing new file: ПКР-1 hq_сжато.pdf
+2026-06-01 09:17:37 │ INFO    │ core.ingestion_handler │ Checking for duplicates: ПКР-1 hq_сжато.pdf
+2026-06-01 09:17:37 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: ПКР-1 hq_сжато.pdf
+2026-06-01 09:17:38 │ INFO    │ core.ingestion_handler │ Processing new file: План-задание корокам 2023.docx
+2026-06-01 09:17:38 │ INFO    │ core.ingestion_handler │ Checking for duplicates: План-задание корокам 2023.docx
+2026-06-01 09:17:38 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: План-задание корокам 2023.docx
+2026-06-01 09:17:39 │ INFO    │ core.ingestion_handler │ Processing new file: План-задание приборы 2023.docx
+2026-06-01 09:17:39 │ INFO    │ core.ingestion_handler │ Checking for duplicates: План-задание приборы 2023.docx
+2026-06-01 09:17:39 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: План-задание приборы 2023.docx
+2026-06-01 09:17:40 │ INFO    │ core.ingestion_handler │ Processing new file: По доплате ДАИ за вакант должн.docx
+2026-06-01 09:17:40 │ INFO    │ core.ingestion_handler │ Checking for duplicates: По доплате ДАИ за вакант должн.docx
+2026-06-01 09:17:40 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: По доплате ДАИ за вакант должн.docx
+2026-06-01 09:17:41 │ INFO    │ core.ingestion_handler │ Processing new file: По доплате Отставнову и Чистякову за вакант должн v3.docx
+2026-06-01 09:17:41 │ INFO    │ core.ingestion_handler │ Checking for duplicates: По доплате Отставнову и Чистякову за вакант должн v3.docx
+2026-06-01 09:17:41 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: По доплате Отставнову и Чистякову за вакант должн v3.docx
+2026-06-01 09:17:42 │ INFO    │ core.ingestion_handler │ Processing new file: По доплате ХАА.docx
+2026-06-01 09:17:42 │ INFO    │ core.ingestion_handler │ Checking for duplicates: По доплате ХАА.docx
+2026-06-01 09:17:42 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: По доплате ХАА.docx
+2026-06-01 09:17:43 │ INFO    │ core.ingestion_handler │ Processing new file: Прил. 1 План задание.docx
+2026-06-01 09:17:43 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Прил. 1 План задание.docx
+2026-06-01 09:17:43 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Прил. 1 План задание.docx
+2026-06-01 09:17:44 │ INFO    │ core.ingestion_handler │ Processing new file: Приложение 4 Отчет о прохождении грозового периода 2025_2.xls
+2026-06-01 09:17:44 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Приложение 4 Отчет о прохождении грозового периода 2025_2.xls
+2026-06-01 09:17:44 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Приложение 4 Отчет о прохождении грозового периода 2025_2.xls
+2026-06-01 09:17:45 │ INFO    │ core.ingestion_handler │ Processing new file: ПСП ЧЭ ЦЭС СДЗП.pdf
+2026-06-01 09:17:45 │ INFO    │ core.ingestion_handler │ Checking for duplicates: ПСП ЧЭ ЦЭС СДЗП.pdf
+2026-06-01 09:17:45 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: ПСП ЧЭ ЦЭС СДЗП.pdf
+2026-06-01 09:17:46 │ INFO    │ core.ingestion_handler │ Processing new file: Служебная записка возложение обязанностей АЮА-БЮВ 2025.docx
+2026-06-01 09:17:46 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Служебная записка возложение обязанностей АЮА-БЮВ 2025.docx
+2026-06-01 09:17:46 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Служебная записка возложение обязанностей АЮА-БЮВ 2025.docx
+2026-06-01 09:17:47 │ INFO    │ core.ingestion_handler │ Processing new file: Служебная записка возложение обязанностей АЮА-БЮВ 2025 ...docx
+2026-06-01 09:17:47 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Служебная записка возложение обязанностей АЮА-БЮВ 2025 ...docx
+2026-06-01 09:17:47 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Служебная записка возложение обязанностей АЮА-БЮВ 2025 ...docx
+2026-06-01 09:17:48 │ INFO    │ core.ingestion_handler │ Processing new file: Служебная записка возложение обязанностей АЮА-БЮВ 2026.docx
+2026-06-01 09:17:48 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Служебная записка возложение обязанностей АЮА-БЮВ 2026.docx
+2026-06-01 09:17:48 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Служебная записка возложение обязанностей АЮА-БЮВ 2026.docx
+2026-06-01 09:17:49 │ INFO    │ core.ingestion_handler │ Processing new file: Служебная записка возложение обязанностей АЮА-БЮВ 2026 ....docx
+2026-06-01 09:17:49 │ INFO    │ core.ingestion_handler │ Checking for duplicates: Служебная записка возложение обязанностей АЮА-БЮВ 2026 ....docx
+2026-06-01 09:17:49 │ INFO    │ core.ingestion_handler │ New file. Moving to PROCESSED: Служебная записка возложение обязанностей АЮА-БЮВ 2026 ....docx

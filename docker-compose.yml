@@ -4,7 +4,7 @@ services:
     container_name: ollama
     restart: unless-stopped
     profiles:
-      - local
+      - local_backend
     ports:
       - "11434:11434"
     volumes:

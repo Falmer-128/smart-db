@@ -40,11 +40,24 @@ class DeploymentScreen(Screen):
         )
         self.query_one("#deploy-summary", Static).update(summary)
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "launch_btn":
             self.query_one("#launch_btn", Button).disabled = True
             self.start_deployment()
         elif event.button.id == "finish_btn":
+            import subprocess
+            try:
+                subprocess.Popen(
+                    "nohup python3 ingestion_daemon.py > daemon.log 2>&1 &",
+                    shell=True,
+                    start_new_session=True,
+                    cwd=os.getcwd()
+                )
+                self.app.notify("Setup Complete. Ingestion Daemon started in the background. Logs are in daemon.log.")
+            except Exception as e:
+                self.app.notify(f"Failed to start ingestion daemon: {e}", severity="error")
+            
+            await asyncio.sleep(2)
             self.app.exit(message="Setup completed successfully! Transitioning to main Dashboard...")
 
     @work
@@ -93,7 +106,7 @@ class DeploymentScreen(Screen):
 
         # Decide which services to bring up based on the backend
         backend = getattr(state, "backend", "ollama")
-        if backend in ("openrouter", "nvidia_nim"):
+        if backend in ("openrouter", "nvidia_nim", "google_gemini"):
             services = ["anythingllm"]
             log.write(
                 f"\n[bold cyan]Backend is '{backend}' — "

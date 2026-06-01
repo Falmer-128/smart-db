@@ -98,6 +98,11 @@ if ! command_exists curl; then
 fi
 ok "curl found"
 
+if ! command_exists unrar; then
+    install_package unrar
+fi
+ok "unrar found"
+
 # ═════════════════════════════════════════════════════════════
 # 2. DOCKER INSTALLATION
 # ═════════════════════════════════════════════════════════════

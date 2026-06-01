@@ -105,7 +105,7 @@ class DockerManager:
 
         # ── Step 1: Start the container ──────────────────────────
         proc = await asyncio.create_subprocess_shell(
-            "docker compose --profile local up -d ollama 2>&1",
+            "docker compose --profile local_backend up -d ollama 2>&1",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
@@ -178,6 +178,14 @@ def generate_env_file(state: Any, filepath: str = ".env") -> None:
         if ext_model:
             lines.append(f"NVIDIA_NIM_MODEL={ext_model}")
 
+    elif provider == "google_gemini":
+        api_key = getattr(state, "api_key", "")
+        if api_key:
+            lines.append(f"GEMINI_API_KEY={api_key}")
+        ext_model = getattr(state, "external_model", "")
+        if ext_model:
+            lines.append(f"GEMINI_MODEL={ext_model}")
+
     # Downloaded models list (for reference)
     downloaded = getattr(state, "downloaded_models", [])
     if downloaded:
@@ -204,12 +212,12 @@ async def run_docker_compose_up(
         Explicit list of services to start. When *None*, every service
         defined in the compose file is started (default Docker behaviour).
     """
-    # When starting ollama (or all services), activate the 'local' profile
+    # When starting ollama (or all services), activate the 'local_backend' profile
     # so the profiled ollama service is included.
     needs_local_profile = services is None or "ollama" in services
     cmd = "docker compose"
     if needs_local_profile:
-        cmd += " --profile local"
+        cmd += " --profile local_backend"
     cmd += " up -d --build"
     if services:
         cmd += " " + " ".join(services)
