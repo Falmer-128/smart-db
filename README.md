@@ -2,16 +2,16 @@
 
 # 📄 Smart Document Parser
 
-**Modular, containerized ETL pipeline that turns raw corporate documents into LLM-ready text**
+**Локальный модульный ETL-конвейер, превращающий сырые корпоративные документы в идеальные JSON-чанки для LLM.**
 
-[![Status: Pre-Alpha](https://img.shields.io/badge/status-pre--alpha-orange?style=for-the-badge)](https://github.com/)
-[![Python 3.10](https://img.shields.io/badge/python-3.10-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Status: v0.5-alpha](https://img.shields.io/badge/status-v0.5--alpha-orange?style=for-the-badge)](https://github.com/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Deployment: Local / .venv](https://img.shields.io/badge/deployment-Local%20%2F%20.venv-2496ED?style=for-the-badge&logo=linux&logoColor=white)](#)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 
 ---
 
-*Drop documents in a folder. Get clean text out. One command. No config.*
+*Drop documents in a folder. Get clean JSON chunks out. One command. Fully local.*
 
 [Key Features](#-key-features) · [Quick Start](#-quick-start) · [How It Works](#-how-it-works) · [Roadmap](#-roadmap)
 
@@ -20,211 +20,128 @@
 ---
 
 > [!WARNING]
-> **Pre-Alpha Software.** This project is under active development. Only **Stage 1** (document extraction & OCR) is currently implemented. APIs, directory layout, and configuration may change without notice.
+> **v0.5-alpha Software.** Active development. Phase 1 (smart parsing, routing, and chunking) is implemented. APIs, directory layout, and configuration may change without notice.
 
 ## 📋 Overview
 
-Smart Document Parser is the first building block of a fully local RAG (Retrieval-Augmented Generation) pipeline. It ingests raw corporate documents — **PDF, DOCX, XLSX, and scanned images** — and produces clean `.txt` files ready for vectorization and consumption by an LLM.
+Smart Document Parser is the first building block of a fully local RAG (Retrieval-Augmented Generation) pipeline. It ingests raw corporate documents — **PDF, DOCX, DOC, XLSX, CSV, and scanned images** — and produces clean `.json` chunk files ready for vectorization and consumption by an LLM.
 
-The entire system ships as a single Docker container and is deployed with **one command**, even on machines that don't have Docker installed yet.
+The entire system runs as a lightweight Python background daemon and is deployed with **one command** locally, with no Docker required.
 
 ## ✨ Key Features
 
 ### 🚀 Zero-Touch Deployment
-A single `start.sh` script handles **everything**:
-- Detects your OS (Debian/Ubuntu, Arch, and derivatives)
-- Installs Docker automatically if it's missing
-- Detects Live USB / overlay filesystems and self-heals by switching Docker to the `vfs` storage driver
-- Builds the image and runs the container — no manual steps required
+A single `setup.sh` script handles **everything**:
+- Automatically creates an isolated Python virtual environment (`.venv`).
+- Installs all necessary dependencies including `pandas`, `mammoth`, `paddleocr`, and `markitdown`.
+- Launches the `ingestion_daemon.py` watchdog in the background.
 
-### 🐳 Optimized Docker Image
-- Based on `python:3.10-slim` — minimal footprint
-- All apt packages installed with `--no-install-recommends` in a single layer
-- Cache-busted layer strategy: OS deps → pip install → app code
-- Final image stays lean — no build tools, no dev headers, no bloat
+### 🛡️ Smart Routing & Fault Tolerance (Body Armor)
+- Files are intelligently routed by their extension to specialized parsers.
+- **Body Armor:** The daemon is wrapped in robust `try/except` blocks. Password-protected Excel files, corrupted Word documents, or malformed PDFs will not crash the daemon; they are safely quarantined in the `OUTPUT/` folder.
+- **Kill Switch for Gemini:** For Tier 3 complex images, the pipeline checks for a Gemini API key. If the key is missing in your `.env`, it securely skips Tier 3 without crashing the entire pipeline.
 
-### 🧠 Smart Routing & OCR
-- PDFs are inspected for an existing text layer before invoking OCR
-- If the text layer contains fewer than `PDF_TEXT_THRESHOLD` characters, the file is automatically **escalated to Tesseract OCR**
-- Scanned documents are rasterized at configurable DPI and processed through Tesseract with `rus+eng` language support
-
-### 🔁 Idempotent Processing
-- On every run, the pipeline checks `PROCESSED/` for existing output files
-- Already-processed documents are **skipped automatically** — safe to re-run at any time
-- No database required; idempotency is file-system-based
+### 🔁 Deduplication
+- The daemon calculates an MD5 hash of the first 300 words of every document and saves them to `content_hashes.json`.
+- Identical documents are deleted instantly, preventing redundant processing and saving valuable disk space and API calls.
 
 ### 📊 Multi-Format Support
 
-| Format | Engine | Method |
+| Format | Engine | Method & Strategy |
 |:-------|:-------|:-------|
-| PDF (text layer) | `pypdf` | Direct text extraction |
-| PDF (scanned) | `Tesseract OCR` | pdf2image → OCR |
-| DOCX | `python-docx` | Paragraph extraction |
-| XLSX / XLS | `pandas` | Sheet → Markdown table |
+| PDF, TXT, CSV | `MarkItDown` | Fast, native text extraction using Microsoft's MarkItDown engine. |
+| XLSX / XLS | `pandas` | Uses `dtype=str` to ignore math/float errors on empty cells. Sliced into massive 5000-character chunks to keep tables perfectly intact. |
+| DOCX | `mammoth` + Regex | Converts Word to Markdown while utilizing Regex to strip massive Base64 inline images (e.g., logos) to keep the LLM context clean. |
+| DOC (Legacy) | LibreOffice (headless) | Invisible background conversion to `.pdf`, which is then routed to MarkItDown for clean text extraction. |
+| Scanned PDF | `PaddleOCR` (Tier 2) | Employs PaddleOCR with PP-Structure for visual table recognition (WIP). |
 
 ## 📁 Project Structure
 
-```
+```text
 smart-db/
 │
-├── start.sh                 # 🚀 Zero-touch deploy script (Docker install + build + run)
-├── Dockerfile               # Optimized multi-stage build (python:3.10-slim)
-├── requirements.txt         # Python dependencies
-├── .env                     # Environment variables (OCR settings, paths)
-├── config.py                # Centralized configuration loader
-├── main.py                  # Entry point — orchestrates the pipeline
-├── smart_parser.py          # Standalone legacy parser (single-file version)
+├── setup.sh                 # 🚀 Zero-touch deploy script (venv + dependencies + daemon)
+├── .env                     # Environment variables (API Keys, config)
+├── ingestion_daemon.py      # Watchdog daemon that monitors the INPUT/ directory
 │
-├── core/
-│   ├── __init__.py
-│   └── router.py            # Smart routing: extension check → text-layer detection → OCR fallback
-│
-├── extractors/
-│   ├── __init__.py
-│   ├── pdf_extractor.py     # Fast text-layer PDF extraction (pypdf)
-│   ├── ocr_extractor.py     # OCR pipeline for scanned PDFs (pdf2image + Tesseract)
-│   ├── docx_extractor.py    # Word document extraction (python-docx)
-│   └── excel_extractor.py   # Excel → Markdown tables (pandas + tabulate)
-│
-├── utils/
-│   ├── __init__.py
-│   └── file_manager.py      # Directory scanning, idempotency logic, file I/O
-│
-├── INPUT/                   # 📥 Drop your raw documents here
-├── PROCESSED/               # 📤 Extracted .txt files (knowledge base)
-└── OUTPUT/                  # 📦 Reserved for future pipeline stages
+├── INPUT/                   # 📥 Drop raw documents here.
+├── PROCESSED/               # 📤 Original files and full .md archives.
+├── CHUNKS_STAGING/          # 📦 Final .json chunks for Vector DB.
+└── OUTPUT/                  # 🛡️ Quarantine for corrupted/password-protected files.
 ```
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- A Linux machine (Debian/Ubuntu, Arch, or derivatives)
-- `sudo` access
+- A Linux machine (tested on Linux Mint/Ubuntu).
+- Python 3.10+
 
-That's it. The script will install Docker for you if needed.
-
-### Run
+### Run the Pipeline
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/Falmer-128/smart-db.git
-<<<<<<< HEAD
 cd smart-db
-=======
-cd smart-document-parser
->>>>>>> f11b9693575dcc50f7fe7c6b5a62aa70e039b5f2
 
-# 2. Drop your documents into the INPUT/ folder
+# 2. Launch the deployment script (creates venv, installs deps, starts daemon)
+./setup.sh
+
+# 3. Drop your documents into the INPUT/ folder
 cp /path/to/your/documents/* INPUT/
-
-# 3. Launch (installs Docker, builds image, runs pipeline)
-sudo ./start.sh
 ```
 
-The script will:
+Extracted chunks will start appearing in `CHUNKS_STAGING/`.
 
-```
-══════════════════════════════════════════════
-  🚀 Smart Document Parser — Zero-Touch Deploy
-══════════════════════════════════════════════
+### Stopping the Daemon
 
-── 1/5  Docker pre-flight check ────────────────
-   ✅ Docker already installed: Docker version 24.x.x
-
-── 2/5  Buildx availability ────────────────────
-   ✅ Buildx available
-
-── 3/5  Filesystem & storage-driver check ──────
-   ✅ Standard filesystem (ext4) — using Docker's default storage driver
-
-── 4/5  Docker daemon ──────────────────────────
-   ✅ Docker daemon is enabled and running
-
-── 5/5  Build & run 'smart-parser' ─────────────
-   ✅ Image 'smart-parser' built successfully
-   ℹ️  Running container...
-
-══════════════════════════════════════════════
-  🏁 Deployment complete. All done!
-══════════════════════════════════════════════
-```
-
-Extracted text files appear in `PROCESSED/`.
-
-### Manual Docker Usage (Advanced)
-
-If you prefer to manage Docker yourself:
+When you want to stop the background ingestion daemon, simply run:
 
 ```bash
-# Build
-docker build -t smart-parser .
-
-# Run with volume mounts
-docker run --rm \
-  -v "$(pwd)/INPUT:/app/INPUT" \
-  -v "$(pwd)/PROCESSED:/app/PROCESSED" \
-  smart-parser
-
-# Override OCR settings at runtime
-docker run --rm \
-  -v "$(pwd)/INPUT:/app/INPUT" \
-  -v "$(pwd)/PROCESSED:/app/PROCESSED" \
-  -e OCR_DPI=200 \
-  -e OCR_LANGUAGES=eng \
-  smart-parser
+pkill -f "python3.*ingestion_daemon.py"
 ```
-
-## ⚙️ Configuration
-
-All settings are controlled via environment variables (defined in `.env`):
-
-| Variable | Default | Description |
-|:---------|:--------|:------------|
-| `INPUT_DIR` | `INPUT` | Directory to scan for raw documents |
-| `PROCESSED_DIR` | `PROCESSED` | Directory for extracted `.txt` files |
-| `OUTPUT_DIR` | `OUTPUT` | Reserved for future pipeline stages |
-| `OCR_LANGUAGES` | `rus+eng` | Tesseract language packs to use |
-| `OCR_DPI` | `300` | Resolution (DPI) for PDF rasterization |
-| `PDF_TEXT_THRESHOLD` | `50` | Min characters to consider a PDF's text layer valid |
 
 ## 🔍 How It Works
 
 ```mermaid
-graph LR
+graph TD
     A["📥 INPUT/"] --> B{"🧠 Router"}
-    B -->|"Text layer ≥ 50 chars"| C["pypdf"]
-    B -->|"Scanned / thin text"| D["Tesseract OCR"]
-    B -->|".docx"| E["python-docx"]
+    
+    B -->|"PDF, TXT, CSV"| C["MarkItDown"]
+    B -->|".docx"| E["mammoth + Regex"]
     B -->|".xlsx / .xls"| F["pandas"]
-    C --> G["📤 PROCESSED/"]
-    D --> G
-    E --> G
-    F --> G
+    B -->|".doc (Legacy)"| L["LibreOffice (headless) → PDF"]
+    L --> C
+    B -->|"Scanned PDF"| G["PaddleOCR (Tier 2)"]
+    
+    C --> I["⚙️ Chunker (5000 chars)"]
+    E --> I
+    F --> I
+    G --> I
+    
+    I --> J["📦 CHUNKS_STAGING/ (JSON)"]
+    I --> K["📤 PROCESSED/ (.md Archives)"]
+    
+    B -.->|"Corrupted / Protected"| O["🛡️ OUTPUT/ (Quarantine)"]
 ```
-
-1. **Scan** — `file_manager.py` lists all files in `INPUT/` and filters out already-processed ones (idempotency check against `PROCESSED/`)
-2. **Route** — `router.py` inspects the file extension. For PDFs, it first attempts fast text-layer extraction; if the result is below the threshold, it escalates to OCR
-3. **Extract** — The matched extractor processes the file and returns clean text
-4. **Save** — Extracted text is written to `PROCESSED/<filename>.txt`
 
 ## 🗺️ Roadmap
 
-This project is **Stage 1** of a larger vision: a fully local, private RAG system that runs entirely on your hardware — no cloud APIs, no data leaving your machine.
+This project is part of a larger vision: a fully local, private RAG system that runs entirely on your hardware.
 
 ```mermaid
 graph TB
     subgraph "✅ Stage 1 — Document ETL (Current)"
-        A["Raw Documents<br/>PDF · DOCX · XLSX"] --> B["Smart Document Parser<br/>(this project)"]
-        B --> C["Clean .txt Files"]
+        A["Raw Documents<br/>PDF · DOCX · XLSX"] --> B["Smart Document Parser<br/>(v0.5-alpha)"]
+        B --> C["Clean JSON Chunks"]
     end
 
-    subgraph "🔜 Stage 2 — Vector Store & Web UI"
-        C --> D["AnythingLLM<br/>Vectorization + Storage + Chat UI"]
+    subgraph "🔜 Stage 2 — Vector Store"
+        C --> D["LanceDB<br/>Vectorization + Storage"]
     end
 
-    subgraph "🔜 Stage 3 — Local LLM"
-        D <-->|"RAG queries"| E["Ollama<br/>Qwen 2.5"]
+    subgraph "🔜 Stage 3 — Local LLM RAG"
+        D <-->|"RAG queries"| E["Ollama / Qwen 2.5<br/>Local Question Answering"]
     end
 
     style A fill:#ff6b6b,stroke:#c0392b,color:#fff
@@ -236,11 +153,9 @@ graph TB
 
 | Stage | Component | Role | Status |
 |:------|:----------|:-----|:-------|
-| **1** | **Smart Document Parser** | Extract text from corporate documents | ✅ Pre-Alpha |
-| **2** | **[AnythingLLM](https://anythingllm.com/)** | Vector database, document embedding, Web UI | 🔜 Planned |
-| **3** | **[Ollama](https://ollama.com/) + [Qwen 2.5](https://qwen.readthedocs.io/)** | Local LLM for question answering | 🔜 Planned |
-
-The final architecture will be orchestrated with **Docker Compose** — one `docker compose up` to launch the entire stack.
+| **1** | **Smart Document Parser** | Extract, clean, and chunk text from corporate documents | ✅ v0.5-alpha |
+| **2** | **LanceDB** | Vector database for ultra-fast document embedding retrieval | 🔜 Planned |
+| **3** | **Ollama + Qwen 2.5** | Local LLM for private, fast question answering | 🔜 Planned |
 
 ## 🤝 Contributing
 

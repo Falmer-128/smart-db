@@ -17,6 +17,8 @@ PROCESSED/*
 !PROCESSED/.gitkeep
 OUTPUT/*
 !OUTPUT/.gitkeep
+CHUNKS_STAGING/*
+
 
 # Исключаем случайные документы в корне
 *.pdf
