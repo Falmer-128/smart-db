@@ -13,7 +13,7 @@
 
 *Drop documents in a folder. Get clean JSON chunks out. One command. Fully local.*
 
-[Key Features](#-key-features) · [Quick Start](#-quick-start) · [How It Works](#-how-it-works) · [Roadmap](#-roadmap)
+[🇷🇺 Читать на русском](README_RU.md) [Key Features](#-key-features) · [Quick Start](#-quick-start) · [How It Works](#-how-it-works) · [Roadmap](#-roadmap)
 
 </div>
 
