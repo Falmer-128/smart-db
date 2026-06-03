@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Ingestion, Extraction, and Triage Daemon (Phase 1)
+Ingestion Daemon — Phase 2 Pipeline Watcher
 Continuously monitors the INPUT directory for new files and archives.
+Delegates all processing to core.text_processor.process_file (MarkItDown / PaddleOCR / Gemini).
 """
 
 import logging
@@ -10,7 +11,6 @@ import sys
 from pathlib import Path
 from watchdog.observers import Observer
 
-from core.deduplicator import Deduplicator
 from core.ingestion_handler import IngestionHandler
 
 # ── Logging setup ────────────────────────────────────────────
@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger("ingestion_daemon")
 
 def main():
-    logger.info("🚀 Starting Ingestion, Extraction, and Triage Daemon")
+    logger.info("🚀 Starting Ingestion Daemon (Phase 2 Pipeline)")
 
     base_dir = Path(__file__).parent.resolve()
     input_dir = base_dir / "INPUT"
@@ -37,13 +37,12 @@ def main():
         d.mkdir(parents=True, exist_ok=True)
         logger.info(f"Verified directory: {d}")
 
-    # Initialize components
-    deduplicator = Deduplicator(db_path=str(base_dir / "seen_hashes.json"))
+    # Initialize handler — no legacy Deduplicator needed;
+    # text_processor.SemanticHasher handles dedup internally.
     handler = IngestionHandler(
         input_dir=str(input_dir),
         processed_dir=str(processed_dir),
         output_dir=str(output_dir),
-        deduplicator=deduplicator
     )
 
     # Set up watchdog

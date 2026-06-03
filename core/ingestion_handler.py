@@ -6,9 +6,10 @@ from pathlib import Path
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
 
 from .archive_extractor import extract_archive
-from .deduplicator import Deduplicator
+from core.text_processor import process_file
 
 logger = logging.getLogger(__name__)
+
 
 def wait_for_file_to_stabilize(file_path: Path, wait_time: float = 1.0, retries: int = 5) -> bool:
     """
@@ -47,17 +48,32 @@ def wait_for_file_to_stabilize(file_path: Path, wait_time: float = 1.0, retries:
     logger.warning(f"File {file_path.name} did not stabilize after {retries} retries.")
     return False
 
+
 class IngestionHandler(FileSystemEventHandler):
-    def __init__(self, input_dir: str, processed_dir: str, output_dir: str, deduplicator: Deduplicator):
+    """
+    Watchdog handler for the INPUT directory.
+
+    Responsibilities:
+      - Archive detection → extract contents back into INPUT, delete the archive.
+      - All other files → delegate to core.text_processor.process_file which
+        handles Tier 1/2/3 conversion, deduplication, quarantine, and chunking.
+    """
+
+    def __init__(self, input_dir: str, processed_dir: str, output_dir: str, **kwargs):
         super().__init__()
         self.input_dir = Path(input_dir)
         self.processed_dir = Path(processed_dir)
         self.output_dir = Path(output_dir)
-        self.deduplicator = deduplicator
-        self.processing_files = set()
-        
+        self.processing_files: set[str] = set()
+
         # Extensions considered as archives
-        self.archive_exts = {'.zip', '.tar', '.gz', '.tgz', '.bz2', '.tbz', '.xz', '.txz', '.7z', '.rar'}
+        self.archive_exts = {
+            '.zip', '.tar', '.gz', '.tgz', '.bz2', '.tbz',
+            '.xz', '.txz', '.7z', '.rar'
+        }
+
+    def _is_archive(self, file_path: Path) -> bool:
+        return any(file_path.name.lower().endswith(ext) for ext in self.archive_exts)
 
     def process_file(self, file_path: Path) -> None:
         if not file_path.is_file():
@@ -75,50 +91,53 @@ class IngestionHandler(FileSystemEventHandler):
             if not file_path.exists():
                 return
 
-            logger.info(f"Processing new file: {file_path.name}")
+            logger.info(f"📄 Processing new file: {file_path.name}")
             
-            # Check if it's an archive
-            if any(file_path.name.lower().endswith(ext) for ext in self.archive_exts):
-                logger.info(f"Archive detected: {file_path.name}. Extracting...")
+            # ── Archives: extract contents into INPUT, delete the archive ────
+            if self._is_archive(file_path):
+                logger.info(f"📦 Archive detected: {file_path.name}. Extracting...")
                 extract_archive(str(file_path), str(self.input_dir))
                 logger.info(f"Extraction successful. Deleting original archive: {file_path.name}")
                 os.remove(file_path)
                 return
+
+            # ── Standard files: delegate to the Phase 2 pipeline ─────────────
+            # process_file() handles:
+            #   • Tier 1 (MarkItDown), Tier 2 (PaddleOCR), Tier 3 (Gemini)
+            #   • Early deduplication (hash first 300 words → delete duplicates)
+            #   • Quarantine to OUTPUT on unreadable/corrupt files
+            #   • Chunking with context injection
+            #   • Moving originals to PROCESSED on success
+            chunks = process_file(str(file_path), save_to_disk=True)
+
+            if chunks:
+                logger.info(
+                    f"✅ Pipeline complete for {file_path.name}: "
+                    f"{len(chunks)} chunk(s) generated."
+                )
             else:
-                # Handle standard file with deduplication
-                logger.info(f"Checking for duplicates: {file_path.name}")
-                if self.deduplicator.is_duplicate(str(file_path)):
-                    logger.warning(f"Duplicate detected. Deleting: {file_path.name}")
-                    os.remove(file_path)
-                else:
-                    dest_path = self.processed_dir / file_path.name
-                    logger.info(f"New file. Moving to PROCESSED: {dest_path.name}")
-                    
-                    # Handle name collisions in PROCESSED by appending timestamp
+                # Empty list is normal — duplicates, quarantined, or daily-limit files.
+                # text_processor already handled the file disposition (delete/move).
+                logger.info(
+                    f"⚠️  Pipeline returned 0 chunks for {file_path.name} "
+                    f"(duplicate / quarantined / limit reached)."
+                )
+
+        except FileNotFoundError:
+            logger.warning(f"File {file_path.name} disappeared before processing could complete.")
+        except Exception as e:
+            logger.error(f"Unhandled error processing {file_path.name}: {e}", exc_info=True)
+            # Last-resort quarantine — move to OUTPUT if the file still exists
+            try:
+                if file_path.exists():
+                    dest_path = self.output_dir / file_path.name
                     if dest_path.exists():
                         base = dest_path.stem
                         ext = dest_path.suffix
                         timestamp = int(time.time())
-                        dest_path = self.processed_dir / f"{base}_{timestamp}{ext}"
-                    
+                        dest_path = self.output_dir / f"{base}_{timestamp}{ext}"
+                    logger.error(f"Quarantining {file_path.name} → {dest_path.name}")
                     shutil.move(str(file_path), str(dest_path))
-
-        except FileNotFoundError:
-            logger.warning(f"File {file_path.name} disappeared before processing could complete.")
-            pass
-        except Exception as e:
-            logger.error(f"Error processing {file_path.name}: {e}", exc_info=True)
-            try:
-                dest_path = self.output_dir / file_path.name
-                # Handle collisions in OUTPUT as well
-                if dest_path.exists():
-                    base = dest_path.stem
-                    ext = dest_path.suffix
-                    timestamp = int(time.time())
-                    dest_path = self.output_dir / f"{base}_{timestamp}{ext}"
-                
-                logger.error(f"Quarantining file {file_path.name} to {dest_path.name}")
-                shutil.move(str(file_path), str(dest_path))
             except Exception as quarantine_e:
                 logger.critical(f"FATAL: Failed to quarantine {file_path.name}: {quarantine_e}")
         finally:

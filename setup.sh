@@ -79,7 +79,7 @@ install_package() {
 # ═════════════════════════════════════════════════════════════
 # 1. CORE DEPENDENCY CHECKS
 # ═════════════════════════════════════════════════════════════
-step "1/6  Core dependency pre-flight"
+step "1/8  Core dependency pre-flight"
 
 if ! command_exists python3; then
     install_package python3
@@ -103,10 +103,38 @@ if ! command_exists unrar; then
 fi
 ok "unrar found"
 
+# LibreOffice headless — required for .doc → .pdf conversion
+if ! command_exists libreoffice; then
+    info "Installing LibreOffice (headless, for .doc conversion)..."
+    if [ "$PKG_MANAGER" = "apt-get" ]; then
+        sudo apt-get update -qq && sudo apt-get install -y libreoffice-core
+    elif [ "$PKG_MANAGER" = "dnf" ]; then
+        sudo dnf install -y libreoffice-core
+    elif [ "$PKG_MANAGER" = "pacman" ]; then
+        sudo pacman -Sy --noconfirm libreoffice-still
+    fi
+fi
+ok "libreoffice found: $(libreoffice --version 2>&1 | head -1)"
+
+# OpenCV system dependencies — required by PaddleOCR
+if [ "$PKG_MANAGER" = "apt-get" ]; then
+    if ! dpkg -s libgl1 >/dev/null 2>&1 || ! dpkg -s libglib2.0-0 >/dev/null 2>&1; then
+        info "Installing OpenCV system dependencies (libgl1, libglib2.0-0)..."
+        sudo apt-get update -qq && sudo apt-get install -y libgl1 libglib2.0-0
+    fi
+elif [ "$PKG_MANAGER" = "dnf" ]; then
+    rpm -q mesa-libGL >/dev/null 2>&1 || sudo dnf install -y mesa-libGL
+    rpm -q glib2 >/dev/null 2>&1   || sudo dnf install -y glib2
+elif [ "$PKG_MANAGER" = "pacman" ]; then
+    pacman -Qi mesa >/dev/null 2>&1  || sudo pacman -Sy --noconfirm mesa
+    pacman -Qi glib2 >/dev/null 2>&1 || sudo pacman -Sy --noconfirm glib2
+fi
+ok "OpenCV system dependencies satisfied."
+
 # ═════════════════════════════════════════════════════════════
 # 2. DOCKER INSTALLATION
 # ═════════════════════════════════════════════════════════════
-step "2/6  Docker pre-flight"
+step "2/8  Docker pre-flight"
 
 if ! command_exists docker || ! docker compose version >/dev/null 2>&1; then
     warn "Docker or Docker Compose V2 is missing. Starting auto-install..."
@@ -126,7 +154,7 @@ fi
 # ═════════════════════════════════════════════════════════════
 # 3. DOCKER DAEMON
 # ═════════════════════════════════════════════════════════════
-step "3/6  Docker daemon"
+step "3/8  Docker daemon"
 
 if command_exists systemctl; then
     if ! systemctl is-active --quiet docker; then
@@ -141,7 +169,7 @@ fi
 # ═════════════════════════════════════════════════════════════
 # 4. DOCKER GROUP MEMBERSHIP
 # ═════════════════════════════════════════════════════════════
-step "4/6  Docker group membership"
+step "4/8  Docker group membership"
 
 if groups "$USER" 2>/dev/null | grep -qw docker; then
     ok "User '${USER}' is already in the 'docker' group."
@@ -174,7 +202,7 @@ fi
 # ═════════════════════════════════════════════════════════════
 # 5. NVIDIA GPU DETECTION & CONTAINER TOOLKIT
 # ═════════════════════════════════════════════════════════════
-step "5/6  NVIDIA GPU & Container Toolkit"
+step "5/8  NVIDIA GPU & Container Toolkit"
 
 NVIDIA_GPU_FOUND=false
 
@@ -256,7 +284,7 @@ fi
 # ═════════════════════════════════════════════════════════════
 # 6. PYTHON VIRTUAL ENVIRONMENT & TUI LAUNCH
 # ═════════════════════════════════════════════════════════════
-step "6/6  Python environment & TUI launch"
+step "6/8  Python environment & dependencies"
 
 # Create .venv if it doesn't exist
 if [ ! -d ".venv" ]; then
@@ -271,10 +299,53 @@ source .venv/bin/activate
 # Upgrade pip quietly
 python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
 
+
 # Install required dependencies
 info "Installing Python dependencies..."
 pip install -r requirements.txt >/dev/null 2>&1
+pip install paddlepaddle paddleocr pymupdf tabulate langchain-text-splitters google-generativeai python-dotenv markitdown mammoth xlrd openpyxl pandas >/dev/null 2>&1
 ok "All Python dependencies installed."
+
+info "Pre-downloading PaddleOCR models (ru)..."
+python3 -c "from paddleocr import PaddleOCR; PaddleOCR(use_textline_orientation=True, lang='ru')"
+ok "PaddleOCR models downloaded."
+
+# ═════════════════════════════════════════════════════════════
+# 7. INGESTION DAEMON LIFECYCLE
+# ═════════════════════════════════════════════════════════════
+step "7/8  Ingestion daemon lifecycle"
+
+DAEMON_SCRIPT="ingestion_daemon.py"
+DAEMON_LOG="daemon.log"
+DAEMON_PID_FILE=".daemon.pid"
+
+# Kill any existing/zombie instances
+if [ -f "$DAEMON_PID_FILE" ]; then
+    OLD_PID=$(cat "$DAEMON_PID_FILE" 2>/dev/null)
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+        info "Stopping existing daemon (PID: $OLD_PID)..."
+        kill "$OLD_PID" 2>/dev/null || true
+        sleep 1
+        # Force kill if it didn't stop gracefully
+        kill -0 "$OLD_PID" 2>/dev/null && kill -9 "$OLD_PID" 2>/dev/null || true
+    fi
+    rm -f "$DAEMON_PID_FILE"
+fi
+
+# Also kill any orphaned processes matching the daemon script name
+pkill -f "python3.*${DAEMON_SCRIPT}" 2>/dev/null || true
+sleep 0.5
+
+# Start the daemon in the background
+info "Starting ingestion daemon in background..."
+nohup python3 "$DAEMON_SCRIPT" >> "$DAEMON_LOG" 2>&1 &
+DAEMON_PID=$!
+echo "$DAEMON_PID" > "$DAEMON_PID_FILE"
+ok "Ingestion daemon started (PID: $DAEMON_PID). Logs → $DAEMON_LOG"
+
+# ═════════════════════════════════════════════════════════════
+# 8. TUI LAUNCH
+# ═════════════════════════════════════════════════════════════
 
 # Launch the TUI
 echo ""
