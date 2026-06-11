@@ -45,20 +45,7 @@ class DeploymentScreen(Screen):
             self.query_one("#launch_btn", Button).disabled = True
             self.start_deployment()
         elif event.button.id == "finish_btn":
-            import subprocess
-            try:
-                subprocess.Popen(
-                    "nohup python3 ingestion_daemon.py > daemon.log 2>&1 &",
-                    shell=True,
-                    start_new_session=True,
-                    cwd=os.getcwd()
-                )
-                self.app.notify("Setup Complete. Ingestion Daemon started in the background. Logs are in daemon.log.")
-            except Exception as e:
-                self.app.notify(f"Failed to start ingestion daemon: {e}", severity="error")
-            
-            await asyncio.sleep(2)
-            self.app.exit(message="Setup completed successfully! Transitioning to main Dashboard...")
+            self.app.exit(message="Setup completed successfully! Check daemon.log for background status.")
 
     @work
     async def start_deployment(self) -> None:
@@ -106,23 +93,39 @@ class DeploymentScreen(Screen):
 
         # Decide which services to bring up based on the backend
         backend = getattr(state, "backend", "ollama")
+        services = ["anythingllm"]
+        
         if backend in ("openrouter", "nvidia_nim", "google_gemini"):
-            services = ["anythingllm"]
             log.write(
                 f"\n[bold cyan]Backend is '{backend}' — "
                 f"skipping local Ollama container.[/bold cyan]"
             )
         else:
-            services = None  # start everything (ollama + anythingllm)
+            services.append("ollama")
 
-        log.write("\n[bold yellow]Starting Docker containers...[/bold yellow]")
+        log.write(f"\n[bold yellow]Starting Docker services: {', '.join(services)}...[/bold yellow]")
 
         try:
-            # Stream docker output directly into the RichLog
             async for line in run_docker_compose_up(cwd=project_root, services=services):
                 log.write(line)
+        except Exception as e:
+            log.write(f"\n[bold red]❌ Docker compose failed:[/bold red] {e}")
+            self.query_one("#launch_btn", Button).disabled = False
+            return
 
-            log.write("\n[bold green]✅ Docker deployment completed successfully![/bold green]")
+        log.write("\n[bold yellow]Launching System Orchestrator in background...[/bold yellow]")
+
+        import subprocess
+        try:
+            subprocess.Popen(
+                "nohup python3 orchestrator.py > daemon.log 2>&1 &",
+                shell=True,
+                start_new_session=True,
+                cwd=project_root
+            )
+            log.write("\n[bold green]✅ Orchestrator dispatched successfully![/bold green]")
+            log.write("[dim]Check daemon.log for background status.[/dim]")
+            
             self.query_one("#finish_btn", Button).disabled = False
             self.query_one("#deploy-summary", Static).update(
                 "[bold green]All systems go![/bold green] Click 'Finish Setup' to exit the wizard."

@@ -116,7 +116,7 @@ if ! command_exists libreoffice; then
 fi
 ok "libreoffice found: $(libreoffice --version 2>&1 | head -1)"
 
-# OpenCV system dependencies — required by PaddleOCR
+# OpenCV system dependencies
 if [ "$PKG_MANAGER" = "apt-get" ]; then
     if ! dpkg -s libgl1 >/dev/null 2>&1 || ! dpkg -s libglib2.0-0 >/dev/null 2>&1; then
         info "Installing OpenCV system dependencies (libgl1, libglib2.0-0)..."
@@ -286,29 +286,44 @@ fi
 # ═════════════════════════════════════════════════════════════
 step "6/8  Python environment & dependencies"
 
-# Create .venv if it doesn't exist
+# Install system dependencies for Docling OCR
+info "Installing system dependencies for Docling OCR..."
+if [ "$PKG_MANAGER" = "apt-get" ]; then
+    sudo apt-get update -qq && sudo apt-get install -y poppler-utils tesseract-ocr tesseract-ocr-rus
+elif [ "$PKG_MANAGER" = "dnf" ]; then
+    sudo dnf install -y poppler-utils tesseract tesseract-langpack-rus
+elif [ "$PKG_MANAGER" = "pacman" ]; then
+    sudo pacman -Sy --noconfirm poppler tesseract tesseract-data-rus
+fi
+ok "Docling OCR system dependencies installed."
+
+# Bootstrap uv
+if ! command_exists uv; then
+    info "uv not found. Installing uv for lightning-fast package management..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    # Ensure uv is in PATH for the current script execution
+    export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+fi
+ok "uv is ready: $(uv --version)"
+
+# Create .venv if it doesn't exist using uv
 if [ ! -d ".venv" ]; then
-    info "Creating virtual environment..."
-    python3 -m venv .venv
+    info "Creating virtual environment with uv..."
+    uv venv .venv
 fi
 ok "Virtual environment ready."
 
 # Activate virtual environment
 source .venv/bin/activate
 
-# Upgrade pip quietly
-python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
+# Install required dependencies with uv
+info "Installing Python dependencies via uv..."
+if [ -f "requirements.txt" ]; then
+    uv pip install -r requirements.txt >/dev/null 2>&1
+fi
 
-
-# Install required dependencies
-info "Installing Python dependencies..."
-pip install -r requirements.txt >/dev/null 2>&1
-pip install paddlepaddle paddleocr pymupdf tabulate langchain-text-splitters google-generativeai python-dotenv markitdown mammoth xlrd openpyxl pandas >/dev/null 2>&1
+uv pip install watchdog python-dotenv pandas mammoth openpyxl xlrd pdf2image PyMuPDF python-docx tabulate langchain-text-splitters google-generativeai pillow verovio tiktoken textual httpx docling >/dev/null 2>&1
 ok "All Python dependencies installed."
-
-info "Pre-downloading PaddleOCR models (ru)..."
-python3 -c "from paddleocr import PaddleOCR; PaddleOCR(use_textline_orientation=True, lang='ru')"
-ok "PaddleOCR models downloaded."
 
 # ═════════════════════════════════════════════════════════════
 # 7. INGESTION DAEMON LIFECYCLE
@@ -335,6 +350,8 @@ fi
 # Also kill any orphaned processes matching the daemon script name
 pkill -f "python3.*${DAEMON_SCRIPT}" 2>/dev/null || true
 sleep 0.5
+
+
 
 # Start the daemon in the background
 info "Starting ingestion daemon in background..."

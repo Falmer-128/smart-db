@@ -30,11 +30,17 @@ from textual.widgets import (
     RichLog,
     SelectionList,
     Static,
+    RadioSet,
+    RadioButton,
 )
 from textual.containers import Horizontal, Vertical
 from textual import work
 
 from tui.utils.docker_manager import DockerManager
+
+import os
+from pathlib import Path
+from dotenv import set_key
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +75,12 @@ class ModelSelectionScreen(Screen):
             )
 
             yield SelectionList[str](id="model-list")
+
+            yield Static("⚙️ System Operation Mode", classes="title", id="system-mode-title")
+            with RadioSet(id="system-mode-select"):
+                yield RadioButton("OCR_ONLY (Ingestion Daemon)", id="sys-ocr", value=True)
+                yield RadioButton("LLM_ONLY (Ollama & AnythingLLM)", id="sys-llm")
+                yield RadioButton("PIPELINE (OCR -> LLM sequence)", id="sys-pipeline")
 
             # ── Static action panel: ALL buttons live here permanently ──
             with Horizontal(id="action-panel", classes="button-row"):
@@ -172,9 +184,28 @@ class ModelSelectionScreen(Screen):
         elif btn_id == "dl-all-btn":
             self._start_download_all()
         elif btn_id == "skip-btn":
+            self._save_system_mode()
             self._skip_download()
         elif btn_id == "continue-btn":
+            self._save_system_mode()
             self.app.push_screen("api_settings")
+
+    def _save_system_mode(self) -> None:
+        try:
+            mode_select = self.query_one("#system-mode-select", RadioSet)
+            mode = "OCR_ONLY"
+            if mode_select.pressed_button:
+                if mode_select.pressed_button.id == "sys-llm":
+                    mode = "LLM_ONLY"
+                elif mode_select.pressed_button.id == "sys-pipeline":
+                    mode = "PIPELINE"
+            
+            env_path = Path('.env')
+            env_path.touch(exist_ok=True)
+            
+            set_key(dotenv_path=env_path, key_to_set="SYSTEM_MODE", value_to_set=mode)
+        except Exception as e:
+            logger.error(f"Failed to save system mode config: {e}")
 
     # ── Download Triggers ────────────────────────────────────
 

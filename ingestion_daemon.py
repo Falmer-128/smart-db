@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Ingestion Daemon — Phase 2 Pipeline Watcher
-Continuously monitors the INPUT directory for new files and archives.
+Continuously polls the INPUT directory for new files every 30 seconds.
 Delegates all processing to core.text_processor.process_file (MarkItDown / PaddleOCR / Gemini).
 """
 
@@ -9,7 +9,6 @@ import logging
 import time
 import sys
 from pathlib import Path
-from watchdog.observers import Observer
 
 from core.ingestion_handler import IngestionHandler
 
@@ -45,24 +44,29 @@ def main():
         output_dir=str(output_dir),
     )
 
-    # Set up watchdog
-    observer = Observer()
-    observer.schedule(handler, str(input_dir), recursive=False)
-    observer.start()
-    
-    logger.info(f"👀 Now monitoring {input_dir} for new files...")
+    logger.info(f"👀 Now polling {input_dir} every 30 seconds for new files...")
 
     try:
         while True:
-            time.sleep(1)
+            # Find all non-hidden files in INPUT
+            files = [f for f in input_dir.iterdir() if f.is_file() and not f.name.startswith('.')]
+
+            if files:
+                logger.info(f"Found {len(files)} file(s) to process.")
+                for file_path in files:
+                    try:
+                        handler.process_file(Path(file_path))
+                    except Exception as e:
+                        logger.error(f"Error processing {file_path.name}: {e}", exc_info=True)
+            else:
+                logger.debug("No files found in INPUT directory.")
+
+            time.sleep(30)
     except KeyboardInterrupt:
         logger.info("🛑 Daemon interrupted by user. Shutting down...")
-        observer.stop()
     except Exception as e:
         logger.critical(f"💥 Daemon crashed: {e}", exc_info=True)
-        observer.stop()
-    
-    observer.join()
+
     logger.info("Daemon gracefully exited.")
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ The entire system runs as a lightweight Python background daemon and is deployed
 ### 🚀 Zero-Touch Deployment
 A single `setup.sh` script handles **everything**:
 - Automatically creates an isolated Python virtual environment (`.venv`).
-- Installs all necessary dependencies including `pandas`, `mammoth`, `paddleocr`, and `markitdown`.
+- Installs all necessary dependencies including `pandas`, `mammoth`, `PyTorch`, `Transformers` (for GOT-OCR 2.0), and `markitdown`.
 - Launches the `ingestion_daemon.py` watchdog in the background.
 
 ### 🛡️ Smart Routing & Fault Tolerance (Body Armor)
@@ -53,7 +53,7 @@ A single `setup.sh` script handles **everything**:
 | XLSX / XLS | `pandas` | Uses `dtype=str` to ignore math/float errors on empty cells. Sliced into massive 5000-character chunks to keep tables perfectly intact. |
 | DOCX | `mammoth` + Regex | Converts Word to Markdown while utilizing Regex to strip massive Base64 inline images (e.g., logos) to keep the LLM context clean. |
 | DOC (Legacy) | LibreOffice (headless) | Invisible background conversion to `.pdf`, which is then routed to MarkItDown for clean text extraction. |
-| Scanned PDF | `PaddleOCR` (Tier 2) | Employs PaddleOCR with PP-Structure for visual table recognition (WIP). |
+| Scanned PDF | `GOT-OCR 2.0` (Tier 2) | Employs GOT-OCR 2.0 (via PyTorch and Transformers) for visual text and table recognition. |
 
 ## 📁 Project Structure
 
@@ -112,7 +112,7 @@ graph TD
     B -->|".xlsx / .xls"| F["pandas"]
     B -->|".doc (Legacy)"| L["LibreOffice (headless) → PDF"]
     L --> C
-    B -->|"Scanned PDF"| G["PaddleOCR (Tier 2)"]
+    B -->|"Scanned PDF"| G["GOT-OCR 2.0 (Tier 2)"]
     
     C --> I["⚙️ Chunker (5000 chars)"]
     E --> I

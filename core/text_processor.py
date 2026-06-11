@@ -1,20 +1,39 @@
 import os
-import re
 import json
 import hashlib
 import time
 import subprocess
 from datetime import datetime
 import shutil
-import fitz  # PyMuPDF — used ONLY for Tier 3 heuristic trigger & page pixmap rendering
-from paddleocr import PaddleOCR
-import pandas as pd
-import google.generativeai as genai
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from markitdown import MarkItDown
+import gc
+import io
+import fitz  # PyMuPDF
+from PIL import Image
 from dotenv import load_dotenv
 
 load_dotenv()
+
+import pandas as pd
+import google.generativeai as genai
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractCliOcrOptions
+
+print("Initializing Docling DocumentConverter with Russian OCR...")
+pipeline_options = PdfPipelineOptions()
+pipeline_options.do_ocr = True
+
+# Explicitly set Tesseract to use Russian and English dictionaries
+pipeline_options.ocr_options = TesseractCliOcrOptions(lang=["rus", "eng"])
+
+converter = DocumentConverter(
+    allowed_formats=[InputFormat.PDF, InputFormat.DOCX, InputFormat.XLSX, InputFormat.IMAGE],
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+print("Docling ready.")
 
 # ── Directory Layout ─────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -114,19 +133,8 @@ class RateLimiter:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Markdown Formatting Helpers for Tier 2/3 raw text
+# Markdown Formatting Helper for Tier 3 (Gemini) output
 # ═════════════════════════════════════════════════════════════════════════════
-def _format_ocr_as_markdown(raw_text, page_num=None):
-    """Wrap raw PaddleOCR output into a Markdown section."""
-    header = f"## OCR — Page {page_num}\n\n" if page_num is not None else "## OCR Output\n\n"
-    # Normalise whitespace into proper paragraphs
-    paragraphs = [p.strip() for p in raw_text.split("\n") if p.strip()]
-    if not paragraphs:
-        paragraphs = [raw_text.strip()]
-    body = "\n\n".join(paragraphs)
-    return header + body
-
-
 def _format_gemini_as_markdown(raw_text, page_num=None):
     """Ensure Gemini output is wrapped in a Markdown section header.
     Gemini is already prompted to return Markdown, so we only add a
@@ -140,78 +148,134 @@ def _format_gemini_as_markdown(raw_text, page_num=None):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Document Router — Tier 3 (Gemini Vision API)
+# Document Router — Tier 3 (Vision API)
 # ═════════════════════════════════════════════════════════════════════════════
 class DocumentRouter:
-    def __init__(self):
-        self._ocr = None
-
-    def _get_ocr_reader(self):
-        """Lazy-initialise the PaddleOCR engine (loaded once, reused)."""
-        if self._ocr is None:
-            self._ocr = PaddleOCR(use_textline_orientation=True, lang='ru', show_log=False)
-        return self._ocr
-
-    @staticmethod
-    def _parse_paddle_result(result):
-        """Parse PaddleOCR result into (full_text, avg_confidence).
-
-        PaddleOCR returns a list of pages, each page is a list of
-        (bbox, (text, confidence)) tuples.  We sort bounding boxes
-        top-to-bottom then left-to-right to reconstruct the natural
-        reading order, which is critical for preserving table layouts."""
-        lines = []
-        confidences = []
-
-        if not result or not result[0]:
-            return "", 0.0
-
-        detections = result[0]  # First (only) page image
-
-        # Sort by vertical centre (top→bottom), then horizontal left edge
-        def _sort_key(det):
-            bbox = det[0]  # list of 4 corner points
-            y_centre = sum(pt[1] for pt in bbox) / len(bbox)
-            x_left = min(pt[0] for pt in bbox)
-            return (y_centre, x_left)
-
-        detections_sorted = sorted(detections, key=_sort_key)
-
-        for det in detections_sorted:
-            text = det[1][0]
-            conf = det[1][1]
-            lines.append(text)
-            confidences.append(conf)
-
-        full_text = " ".join(lines)
-        avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
-        return full_text, avg_conf
+    def _encode_image_to_base64(self, image_path):
+        import base64
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode('utf-8')
 
     def process_tier3_image(self, image_path):
-        """Send a single page image to Gemini Vision API.  Accepts a
-        file path to a PNG/JPG image — never a full multi-page PDF."""
+        """Send a single page image to a Vision API."""
         can_proceed, msg = RateLimiter.check_and_update()
         if not can_proceed:
-            print(f"Skipping Gemini Vision API: {msg}")
+            print(f"Skipping Vision API: {msg}")
             raise Exception("DailyLimitReached")
 
-        api_key = os.environ.get("GEMINI_API_KEY")
+        provider = os.environ.get("VISION_PROVIDER", "google")
+        api_key = os.environ.get("VISION_API_KEY")
+        
         if not api_key:
-            print("GEMINI_API_KEY not found in environment. Skipping Tier 3 processing.")
+            print("VISION_API_KEY not found in environment. Skipping Tier 3 processing.")
             return ""
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-3.1-flash-lite')
+        model_id = os.environ.get("VISION_MODEL", "")
+        prompt = "Task: Transcribe all text from the image into Markdown. Format tables using Markdown syntax. Describe any complex schematics. Output ONLY the raw markdown content."
+
         try:
-            sample_file = genai.upload_file(path=image_path)
-            response = model.generate_content([
-                sample_file,
-                "Extract all text and describe any complex schematics or diagrams. "
-                "Format the output as valid Markdown with headers, lists, and tables where appropriate."
-            ])
-            return response.text
+            if provider == "google":
+                import google.generativeai as genai
+                genai.configure(api_key=api_key)
+                target_model = model_id if model_id else "gemini-3.1-flash-lite"
+                model = genai.GenerativeModel(target_model)
+                sample_file = genai.upload_file(path=image_path)
+                response = model.generate_content([sample_file, prompt])
+                return response.text
+
+            elif provider == "anthropic":
+                import anthropic
+                import mimetypes
+                client = anthropic.Anthropic(api_key=api_key)
+                target_model = model_id if model_id else "claude-3-5-sonnet-20241022"
+                
+                media_type, _ = mimetypes.guess_type(image_path)
+                if not media_type:
+                    media_type = "image/png"
+                    
+                base64_image = self._encode_image_to_base64(image_path)
+                
+                response = client.messages.create(
+                    model=target_model,
+                    max_tokens=4096,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": base64_image,
+                                    },
+                                },
+                                {
+                                    "type": "text",
+                                    "text": prompt
+                                }
+                            ],
+                        }
+                    ],
+                )
+                return response.content[0].text
+
+            elif provider in ["openai", "openrouter", "nvidia"]:
+                import openai
+                import mimetypes
+                
+                base_url = None
+                target_model = model_id
+                
+                if provider == "openai":
+                    if not target_model:
+                        target_model = "gpt-4o"
+                elif provider == "openrouter":
+                    base_url = "https://openrouter.ai/api/v1"
+                elif provider == "nvidia":
+                    base_url = "https://integrate.api.nvidia.com/v1"
+                
+                client_args = {"api_key": api_key}
+                if base_url:
+                    client_args["base_url"] = base_url
+                    
+                client = openai.OpenAI(**client_args)
+                
+                media_type, _ = mimetypes.guess_type(image_path)
+                if not media_type:
+                    media_type = "image/png"
+                    
+                base64_image = self._encode_image_to_base64(image_path)
+                data_uri = f"data:{media_type};base64,{base64_image}"
+                
+                response = client.chat.completions.create(
+                    model=target_model,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": prompt
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": data_uri
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                )
+                return response.choices[0].message.content
+
+            else:
+                print(f"Unknown VISION_PROVIDER: {provider}")
+                return ""
+
         except Exception as e:
-            print(f"Error with Gemini API: {e}")
+            print(f"Error with {provider} API: {e}")
             return ""
 
 
@@ -280,13 +344,13 @@ def convert_doc_to_pdf(doc_path):
 # ═════════════════════════════════════════════════════════════════════════════
 # Main Entry Point
 # ═════════════════════════════════════════════════════════════════════════════
-def process_file(filepath, save_to_disk=False):
+def process_file(filepath, save_to_disk=False, enable_tier3=False):
     filename = os.path.basename(filepath)
     ext = filepath.lower().split('.')[-1]
 
     # ── Step 0: .doc Pre-Processing ──────────────────────────────────────────
-    # Legacy binary .doc files cannot be parsed by MarkItDown or accepted by
-    # Gemini.  Convert to PDF via LibreOffice headless, then process as PDF.
+    # Legacy binary .doc files cannot be parsed by Docling directly.
+    # Convert to PDF via LibreOffice headless, then process as PDF.
     original_filepath = filepath  # Preserve for PROCESSED move / quarantine
     tmp_pdf_path = None
     if ext == 'doc':
@@ -303,209 +367,156 @@ def process_file(filepath, save_to_disk=False):
 
     router = DocumentRouter()
 
-    # ── Step 1: Early Deduplication ──────────────────────────────────────────
-    # Extract a lightweight first-pass text via MarkItDown (cheap, no API).
-    # Hash the first 300 words and bail immediately if duplicate.
-    # Excel files (.xls/.xlsx) are intercepted and processed via pandas to
-    # avoid NaN / "Unnamed" garbage that MarkItDown produces on complex
-    # corporate spreadsheets with merged cells and padding rows.
+    # ── Step 1: Docling Conversion ───────────────────────────────────────────
+    # Unified engine for all file types (PDF, DOCX, XLSX, Images).
+    full_md = ""
+    cloud_pages = []
+
     try:
-        if ext in ('xls', 'xlsx'):
-            xls = pd.ExcelFile(filepath)
-            excel_text = []
-            for sheet_name in xls.sheet_names:
-                # Read sheet, dropping completely empty rows and columns
-                df = pd.read_excel(xls, sheet_name=sheet_name, dtype=str)
-                df.dropna(how='all', inplace=True)
-                df.dropna(axis=1, how='all', inplace=True)
-                # Fill remaining NaNs with empty string
-                df.fillna("", inplace=True)
+        print(f"Processing {filename} with Docling...")
+        result = converter.convert(filepath)
+        doc = result.document
 
-                # Convert to markdown table
-                sheet_md = f"## Лист: {sheet_name}\n\n" + df.to_markdown(index=False)
-                excel_text.append(sheet_md)
-            xls.close()
-            quick_text = "\n\n".join(excel_text)
-        else:
-            md = MarkItDown()
-            quick_result = md.convert(filepath)
-            quick_text = quick_result.text_content or ""
-    except Exception:
-        quick_text = ""
+        # Extract full document as Markdown
+        full_md = doc.export_to_markdown()
 
-    # For PDFs where MarkItDown returned nothing, grab first-page text via fitz
-    if not quick_text.strip() and ext == 'pdf':
+        # ── Layout Router: Smart Fallback API Conservation ───
+        cloud_pages_set = set()
         try:
-            doc = fitz.open(filepath)
-            if len(doc) > 0:
-                quick_text = doc[0].get_text() or ""
-            doc.close()
-        except Exception:
-            quick_text = ""
-
-    if quick_text and len(quick_text.strip()) > 10:
-        file_hash = SemanticHasher.get_hash(quick_text)
-        if SemanticHasher.is_duplicate(file_hash):
-            print(f"Duplicate file detected: {filename}. Permanently deleting.")
-            os.remove(filepath)
-            return []
-    else:
-        file_hash = None  # Will compute after full extraction
-
-    # ── Step 2: Tier Routing ─────────────────────────────────────────────────
-    raw_texts = []
-
-    try:
-        # --- PDF-specific: check the Tier 3 heuristic per page ---------------
-        if ext == 'pdf':
-            doc = fitz.open(filepath)
-            for page_num, page in enumerate(doc):
-                is_complex = len(page.get_drawings()) > 100 or len(page.get_images()) > 5
-
-                if is_complex:
-                    # Tier 3: render THIS page as image → send to Gemini
-                    pix = page.get_pixmap()
-                    img_path = f"/tmp/smartdb_page_{page_num}.png"
-                    pix.save(img_path)
+            for item, _ in doc.iterate_items():
+                label_str = str(getattr(item, 'label', '')).lower()
+                
+                # 1. Route Figures (Always) and Large Pictures (Ignore small logos/stamps)
+                if "figure" in label_str:
+                    for prov in getattr(item, 'prov', []):
+                        if hasattr(prov, 'page_no'):
+                            cloud_pages_set.add(prov.page_no)
+                elif "picture" in label_str:
+                    is_large = False
+                    for prov in getattr(item, 'prov', []):
+                        if hasattr(prov, 'bbox'):
+                            bbox = prov.bbox
+                            # Check if width or height is substantial (e.g., > 200 points) to filter out small stamps
+                            if (bbox.r - bbox.l) > 200 or (bbox.b - bbox.t) > 200:
+                                is_large = True
+                                break
+                    if is_large:
+                        for prov in getattr(item, 'prov', []):
+                            if hasattr(prov, 'page_no'):
+                                cloud_pages_set.add(prov.page_no)
+                # 2. Smart Fallback for Tables (Conserve API limits)
+                elif "table" in label_str:
                     try:
-                        desc = router.process_tier3_image(img_path)
-                        if desc:
-                            md_text = _format_gemini_as_markdown(desc, page_num=page_num)
-                            raw_texts.append((md_text, "Tier 3-Complex", "Gemini-API"))
-                    finally:
-                        if os.path.exists(img_path):
-                            os.remove(img_path)
-                    continue
+                        item_text = item.export_to_markdown(doc=doc)
+                        if "&#124;" in item_text or "tan" in item_text:
+                            for prov in getattr(item, 'prov', []):
+                                if hasattr(prov, 'page_no'):
+                                    cloud_pages_set.add(prov.page_no)
+                    except Exception as e:
+                        print(f"Warning: Failed to extract table text for Smart Fallback: {e}", flush=True)
+                        # Fallback: assume failure and route to Cloud Vision
+                        for prov in getattr(item, 'prov', []):
+                            if hasattr(prov, 'page_no'):
+                                cloud_pages_set.add(prov.page_no)
 
-            doc.close()
+        except Exception as e:
+            print(f"Warning: Failed to iterate doc items for routing: {e}", flush=True)
 
-            # If no pages were Tier 3, check if Tier 1 (MarkItDown) succeeded
-            if not raw_texts:
-                if quick_text and len(quick_text.strip()) > 50:
-                    # Tier 1: MarkItDown already gave us clean Markdown
-                    raw_texts.append((quick_text, "Tier 1-Digital", "MarkItDown"))
-                else:
-                    # Tier 2: scan pages with PaddleOCR
-                    doc = fitz.open(filepath)
-                    ocr_engine = router._get_ocr_reader()
-                    for page_num, page in enumerate(doc):
-                        pix = page.get_pixmap()
-                        img_path = f"/tmp/smartdb_page_{page_num}.png"
-                        pix.save(img_path)
-                        try:
-                            ocr_result = ocr_engine.ocr(img_path, cls=True)
-                            page_text, avg_conf = DocumentRouter._parse_paddle_result(ocr_result)
+        cloud_pages = sorted(list(cloud_pages_set))
 
-                            if page_text:
-                                if avg_conf >= 0.7:
-                                    md_text = _format_ocr_as_markdown(page_text, page_num=page_num)
-                                    raw_texts.append((md_text, "Tier 2-Scan", "PaddleOCR"))
-                                else:
-                                    # Low confidence → escalate to Tier 3
-                                    desc = router.process_tier3_image(img_path)
-                                    if desc:
-                                        md_text = _format_gemini_as_markdown(desc, page_num=page_num)
-                                        raw_texts.append((md_text, "Tier 3-Complex", "Gemini-API"))
-                            else:
-                                # No OCR results at all → escalate to Tier 3
-                                desc = router.process_tier3_image(img_path)
-                                if desc:
-                                    md_text = _format_gemini_as_markdown(desc, page_num=page_num)
-                                    raw_texts.append((md_text, "Tier 3-Complex", "Gemini-API"))
-                        finally:
-                            if os.path.exists(img_path):
-                                os.remove(img_path)
-                    doc.close()
-
-        # --- Image files: Tier 2 (OCR) → Tier 3 (Gemini) fallback -----------
-        elif ext in ('jpg', 'jpeg', 'png'):
-            ocr_engine = router._get_ocr_reader()
-            ocr_result = ocr_engine.ocr(filepath, cls=True)
-            page_text, avg_conf = DocumentRouter._parse_paddle_result(ocr_result)
-            if page_text:
-                if avg_conf >= 0.7:
-                    md_text = _format_ocr_as_markdown(page_text)
-                    raw_texts.append((md_text, "Tier 2-Scan", "PaddleOCR"))
-                else:
-                    desc = router.process_tier3_image(filepath)
-                    if desc:
-                        md_text = _format_gemini_as_markdown(desc)
-                        raw_texts.append((md_text, "Tier 3-Complex", "Gemini-API"))
-            else:
-                desc = router.process_tier3_image(filepath)
-                if desc:
-                    md_text = _format_gemini_as_markdown(desc)
-                    raw_texts.append((md_text, "Tier 3-Complex", "Gemini-API"))
-
-        # --- Excel files: Tier 1 (Pandas) — NO Gemini fallback ----------------
-        elif ext in ('xls', 'xlsx'):
-            try:
-                engine = 'xlrd' if ext == 'xls' else 'openpyxl'
-                xls_file = pd.ExcelFile(filepath, engine=engine)
-                excel_text = []
-                for sheet_name in xls_file.sheet_names:
-                    df = pd.read_excel(xls_file, sheet_name=sheet_name, dtype=str)
-                    df.dropna(how='all', inplace=True)
-                    df.dropna(axis=1, how='all', inplace=True)
-                    df.fillna("", inplace=True)
-                    if not df.empty:
-                        sheet_md = f"## Лист: {sheet_name}\n\n" + df.to_markdown(index=False)
-                        excel_text.append(sheet_md)
-                xls_file.close()
-
-                quick_text = "\n\n".join(excel_text)
-                if quick_text.strip():
-                    raw_texts.append((quick_text, "Tier 1-Digital", "Pandas-Excel"))
-                else:
-                    raise ValueError("Pandas extracted empty text.")
-            except Exception as e:
-                print(f"Pandas failed for {filename}: {e}. Likely password protected or corrupted. Moving to OUTPUT.")
-
-        # --- Word files: Tier 1 (Mammoth) — NO Gemini fallback ----------------
-        elif ext == 'docx':
-            try:
-                import mammoth
-                with open(filepath, "rb") as docx_file:
-                    # Convert docx to markdown, ignoring images entirely
-                    result = mammoth.convert_to_markdown(docx_file, ignore_empty_paragraphs=True)
-                    doc_text = result.value
-                    doc_text = re.sub(r'!\[.*?\]\(data:image/.*?\)', '', doc_text)
-                    if doc_text.strip():
-                        raw_texts.append((doc_text, "Tier 1-Digital", "Mammoth-Word"))
-                    else:
-                        raise ValueError("Mammoth extracted empty text.")
-            except Exception as e:
-                print(f"Mammoth failed for {filename}: {e}. Likely corrupted. Moving to OUTPUT.")
-
-        # --- All other digital formats: Tier 1 (MarkItDown) → Tier 3 fallback -
+        if cloud_pages:
+            print(f"☁️ Complex elements (tables/figures) detected on pages: {cloud_pages}", flush=True)
         else:
-            if quick_text and len(quick_text.strip()) > 50:
-                raw_texts.append((quick_text, "Tier 1-Digital", "MarkItDown"))
-            else:
-                # MarkItDown returned empty/short (e.g. scanned-image-only .docx).
-                # Fallback to Tier 3 (Gemini Vision) instead of quarantining.
-                print(f"MarkItDown returned empty for {filename}. Falling back to Tier 3 (Gemini).")
-                desc = router.process_tier3_image(filepath)
-                if desc:
-                    md_text = _format_gemini_as_markdown(desc)
-                    raw_texts.append((md_text, "Tier 3-Complex", "Gemini-API"))
+            print("ℹ️ No complex elements flagged for Tier 3 processing.", flush=True)
 
     except Exception as e:
-        if str(e) == "DailyLimitReached":
-            print(f"Daily limit reached. Skipping {filename}.")
-            if tmp_pdf_path and os.path.exists(tmp_pdf_path):
-                os.remove(tmp_pdf_path)
-            return []
-        else:
-            print(f"Processing failed for {filename}: {e}. Moving to OUTPUT (Quarantine).")
-            if os.path.exists(original_filepath):
-                shutil.move(original_filepath, os.path.join(OUTPUT_DIR, filename))
-            if tmp_pdf_path and os.path.exists(tmp_pdf_path):
-                os.remove(tmp_pdf_path)
-            return []
+        print(f"Docling conversion failed for {filename}: {e}. Moving to OUTPUT (Quarantine).")
+        if os.path.exists(original_filepath):
+            shutil.move(original_filepath, os.path.join(OUTPUT_DIR, filename))
+        if tmp_pdf_path and os.path.exists(tmp_pdf_path):
+            os.remove(tmp_pdf_path)
+        return []
 
-    # ── Step 3: Quarantine if nothing was extracted ──────────────────────────
-    if not raw_texts:
+    # ── Step 2: Early Deduplication ──────────────────────────────────────────
+    if full_md and len(full_md.strip()) > 10:
+        file_hash = SemanticHasher.get_hash(full_md)
+        if SemanticHasher.is_duplicate(file_hash):
+            print(f"Duplicate file detected: {filename}. Permanently deleting.")
+            if os.path.exists(original_filepath):
+                os.remove(original_filepath)
+            if tmp_pdf_path and os.path.exists(tmp_pdf_path):
+                os.remove(tmp_pdf_path)
+            return []
+    else:
+        file_hash = None  # Will compute after Tier 3 enrichment if needed
+
+    # ── Step 3: Build combined text ───────────────────────────────────────────
+    tier3_texts = []
+
+    # ── Step 4: Tier 3 Cloud Processing for Figure Pages ─────────────────────
+    # If cloud_pages were detected and VISION_API_KEY is available,
+    # render those pages as images and send to Gemini for detailed description.
+    vision_api_key = os.environ.get("VISION_API_KEY")
+    if cloud_pages and vision_api_key:
+        genai.configure(api_key=vision_api_key)
+        vision_model_name = os.environ.get("VISION_MODEL", "gemini-1.5-flash")
+        vision_model = genai.GenerativeModel(vision_model_name)
+
+        try:
+            pdf_doc = fitz.open(filepath)
+            num_pages = len(pdf_doc)
+
+            for page_num in cloud_pages:
+                # Docling page_num is 1-indexed; fitz is 0-indexed
+                fitz_page_idx = page_num - 1
+                if fitz_page_idx < 0 or fitz_page_idx >= num_pages:
+                    continue
+
+                try:
+                    fitz_page = pdf_doc[fitz_page_idx]
+                    pix = fitz_page.get_pixmap(dpi=400)
+                    img_bytes = pix.tobytes("png")
+                    pil_img = Image.open(io.BytesIO(img_bytes))
+
+                    prompt = (
+                        f"Это страница {page_num} из технического документа. "
+                        "Здесь присутствует сложная схема, чертеж или таблица с диагностическими данными (параметры трансформаторов, сопротивление, тангенс угла потерь и т.д.). "
+                        "Опиши содержимое максимально подробно в формате Markdown. "
+                        "Если это принципиальная электрическая схема — перечисли ключевые компоненты. "
+                        "КРИТИЧЕСКИ ВАЖНО: Если на странице есть таблицы с числами, перенеси их в идеальные Markdown-таблицы. Сохраняй абсолютную точность каждого числа, запятой и единицы измерения (Ом, кВ, %, tan). Никаких галлюцинаций."
+                    )
+
+                    max_retries = 5
+                    for attempt in range(max_retries):
+                        try:
+                            time.sleep(4)
+                            response = vision_model.generate_content([pil_img, prompt])
+                            tier3_texts.append(
+                                f"## ☁️ Детальное описание схемы (Страница {page_num})\n\n{response.text}"
+                            )
+                            print(f"Page {page_num}: Complex figure processed via Gemini Vision.", flush=True)
+                            break
+                        except Exception as e:
+                            err_msg = str(e).lower()
+                            if "429" in err_msg or "exhausted" in err_msg or "quota" in err_msg:
+                                if attempt < max_retries - 1:
+                                    print(f"⏳ API Rate limit reached. Waiting 60 seconds before retrying page {page_num}...", flush=True)
+                                    time.sleep(60)
+                                else:
+                                    print(f"Failed to process page {page_num} after {max_retries} attempts due to rate limits.", flush=True)
+                            else:
+                                print(f"Tier 3 processing failed for page {page_num} on attempt {attempt+1}: {e}", flush=True)
+                                break
+
+                except Exception as e:
+                    print(f"Tier 3 processing failed for page {page_num}: {e}", flush=True)
+
+            pdf_doc.close()
+        except Exception as e:
+            print(f"Failed to open PDF for Tier 3 figure processing: {e}", flush=True)
+
+    # ── Step 5: Quarantine if nothing was extracted ──────────────────────────
+    if not full_md or not full_md.strip():
         print(f"No text extracted for {filename}. Moving to OUTPUT (Quarantine).")
         if os.path.exists(original_filepath):
             shutil.move(original_filepath, os.path.join(OUTPUT_DIR, filename))
@@ -513,10 +524,9 @@ def process_file(filepath, save_to_disk=False):
             os.remove(tmp_pdf_path)
         return []
 
-    # ── Step 4: Final dedup (if early hash was skipped) ─────────────────────
+    # ── Step 6: Final dedup ─────────────────────────────────────────────────
     if file_hash is None:
-        full_text = "\n\n".join(t[0] for t in raw_texts)
-        file_hash = SemanticHasher.get_hash(full_text)
+        file_hash = SemanticHasher.get_hash(full_md)
         if SemanticHasher.is_duplicate(file_hash):
             print(f"Duplicate file detected: {filename}. Permanently deleting.")
             if os.path.exists(original_filepath):
@@ -527,8 +537,12 @@ def process_file(filepath, save_to_disk=False):
 
     SemanticHasher.mark_seen(file_hash)
 
-    # ── Step 5: Save human-readable Markdown archive ────────────────────────
-    full_text = "\n\n".join(t[0] for t in raw_texts)
+    # ── Step 7: Save human-readable Markdown archive ────────────────────────
+    # Combine Docling markdown with any Tier 3 enrichments
+    full_text = full_md
+    if tier3_texts:
+        full_text = full_md + "\n\n" + "\n\n".join(tier3_texts)
+
     md_archive_path = os.path.join(PROCESSED_DIR, f"{filename}.md")
     try:
         with open(md_archive_path, 'w', encoding='utf-8') as f:
@@ -537,21 +551,20 @@ def process_file(filepath, save_to_disk=False):
     except Exception as e:
         print(f"Warning: failed to save .md archive for {filename}: {e}")
 
-    # ── Step 6: Chunk & Inject Context ──────────────────────────────────────
-    final_chunks = []
-    for text, doc_type, method in raw_texts:
-        chunks = chunk_and_inject(text, filename, doc_type, method)
-        final_chunks.extend(chunks)
+    # ── Step 8: Chunk & Inject Context ──────────────────────────────────────
+    final_chunks = chunk_and_inject(full_text, filename, doc_type="Document", method="Docling")
 
     if save_to_disk:
         out_file = os.path.join(CHUNKS_DIR, f"{filename}.json")
         with open(out_file, 'w', encoding='utf-8') as f:
             json.dump(final_chunks, f, ensure_ascii=False, indent=2)
 
-    # ── Step 7: Move original to PROCESSED & clean up temp PDF ──────────────
+    # ── Step 9: Move original to PROCESSED & clean up temp PDF ──────────────
     if os.path.exists(original_filepath):
         shutil.move(original_filepath, os.path.join(PROCESSED_DIR, filename))
     if tmp_pdf_path and os.path.exists(tmp_pdf_path):
         os.remove(tmp_pdf_path)
+
+    gc.collect()
 
     return final_chunks

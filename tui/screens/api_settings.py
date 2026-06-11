@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 from textual.app import ComposeResult
 from textual.screen import Screen
@@ -22,6 +23,7 @@ from textual.widgets import (
     RadioButton,
     RadioSet,
     Static,
+    Select,
 )
 from textual.containers import Horizontal, Vertical
 from textual import work
@@ -34,7 +36,7 @@ class APISettingsScreen(Screen):
         "ollama": "",
         "openrouter": "meta-llama/llama-3.1-8b-instruct",
         "nvidia_nim": "meta/llama-3.1-8b-instruct",
-        "google_gemini": "gemini-1.5-pro-latest",
+        "google_gemini": "gemma-4-31b-it",
     }
 
     def __init__(self) -> None:
@@ -42,6 +44,28 @@ class APISettingsScreen(Screen):
         self._selected_provider: str = "ollama"
 
     def compose(self) -> ComposeResult:
+        load_dotenv(os.path.join(os.getcwd(), ".env"))
+        
+        backend = os.environ.get("LLM_BACKEND", "ollama")
+        api_key = ""
+        model_override = ""
+        
+        if backend == "openrouter":
+            api_key = os.environ.get("OPENROUTER_API_KEY", "")
+            model_override = os.environ.get("OPENROUTER_MODEL") or os.environ.get("LLM_MODEL", "")
+        elif backend == "nvidia_nim":
+            api_key = os.environ.get("NVIDIA_NIM_API_KEY", "")
+            model_override = os.environ.get("NVIDIA_NIM_MODEL") or os.environ.get("LLM_MODEL", "")
+        elif backend == "google_gemini":
+            api_key = os.environ.get("GEMINI_API_KEY", "")
+            model_override = os.environ.get("GEMINI_MODEL") or os.environ.get("LLM_MODEL", "")
+        else:
+            model_override = os.environ.get("LLM_MODEL", "")
+
+        vision_provider = os.environ.get("VISION_PROVIDER", "google")
+        vision_api_key = os.environ.get("VISION_API_KEY", "")
+        vision_model = os.environ.get("VISION_MODEL", "")
+
         yield Header()
         with Vertical(classes="panel", id="api-panel"):
             yield Static("⚙️  API Settings", classes="title")
@@ -55,15 +79,16 @@ class APISettingsScreen(Screen):
             # Provider selection
             yield Label("[bold]LLM Backend:[/bold]", id="provider-label")
             with RadioSet(id="provider-radio"):
-                yield RadioButton("Local Ollama", value=True, id="radio-ollama")
-                yield RadioButton("OpenRouter", id="radio-openrouter")
-                yield RadioButton("NVIDIA NIM", id="radio-nvidia-nim")
-                yield RadioButton("Google (Gemini)", id="radio-google-gemini")
+                yield RadioButton("Local Ollama", value=(backend == "ollama"), id="radio-ollama")
+                yield RadioButton("OpenRouter", value=(backend == "openrouter"), id="radio-openrouter")
+                yield RadioButton("NVIDIA NIM", value=(backend == "nvidia_nim"), id="radio-nvidia-nim")
+                yield RadioButton("Google (Gemini)", value=(backend == "google_gemini"), id="radio-google-gemini")
 
             # API Key input (hidden for Ollama)
             with Vertical(id="api-key-section"):
                 yield Label("[bold]API Key:[/bold]", id="api-key-label")
                 yield Input(
+                    value=api_key,
                     placeholder="Enter your API key...",
                     password=True,
                     id="api-key-input",
@@ -76,9 +101,40 @@ class APISettingsScreen(Screen):
                     id="model-override-label",
                 )
                 yield Input(
+                    value=model_override,
                     placeholder="e.g. meta-llama/llama-3.1-8b-instruct",
                     id="model-override-input",
                 )
+
+            # Vision Provider Section
+            yield Static("👁️  Vision Provider (Tier 3 OCR)", classes="subtitle", id="vision-title")
+            yield Label("[bold]Vision Provider:[/bold]", id="vision-provider-label")
+            yield Select(
+                [
+                    ("Google Gemini", "google"),
+                    ("Anthropic Claude", "anthropic"),
+                    ("OpenAI", "openai"),
+                    ("OpenRouter", "openrouter"),
+                    ("Nvidia NIM", "nvidia")
+                ],
+                value=vision_provider,
+                id="vision-provider-select"
+            )
+            
+            yield Label("[bold]Vision API Key:[/bold]", id="vision-key-label")
+            yield Input(
+                value=vision_api_key,
+                placeholder="Enter vision provider API key...",
+                password=True,
+                id="vision-key-input",
+            )
+            
+            yield Label("[bold]Vision Model ID:[/bold] [dim](leave blank for default)[/dim]", id="vision-model-label")
+            yield Input(
+                value=vision_model,
+                placeholder="e.g. gemini-3.1-flash-lite",
+                id="vision_model_input",
+            )
 
             # Connection test
             with Vertical(id="test-section"):
@@ -99,80 +155,13 @@ class APISettingsScreen(Screen):
 
     def on_mount(self) -> None:
         """Initialize UI state based on current app state and existing .env file."""
-        # Hide API key section for Ollama (default)
-        self.query_one("#api-key-section").display = False
-
-        state = self.app.state
-        env_vars = {}
-
-        # 1. Parse existing .env file
-        try:
-            env_path = os.path.join(os.getcwd(), ".env")
-            if os.path.isfile(env_path):
-                with open(env_path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#"):
-                            try:
-                                key, value = line.split("=", 1)
-                                env_vars[key.strip()] = value.strip()
-                            except ValueError:
-                                pass
-        except Exception:
-            pass  # Silently fail if malformed or missing
-
-        # 2. Map parsed variables to UI
-        backend = env_vars.get("LLM_BACKEND", "ollama")
-        
-        # Select the correct radio button. This will enqueue a RadioSet.Changed event.
-        if backend == "openrouter":
-            self.query_one("#radio-openrouter", RadioButton).value = True
-        elif backend == "nvidia_nim":
-            self.query_one("#radio-nvidia-nim", RadioButton).value = True
-        elif backend == "google_gemini":
-            self.query_one("#radio-google-gemini", RadioButton).value = True
+        backend = os.environ.get("LLM_BACKEND", "ollama")
+        if backend == "ollama":
+            self.query_one("#api-key-section").display = False
+            self._selected_provider = "ollama"
         else:
-            self.query_one("#radio-ollama", RadioButton).value = True
-
-        # Use call_later to populate the text inputs *after* the RadioSet.Changed 
-        # event handler has executed. Otherwise, the event handler will overwrite 
-        # our pre-filled values with the DEFAULT_MODELS.
-        def populate_inputs() -> None:
-            api_key_input = self.query_one("#api-key-input", Input)
-            model_override_input = self.query_one("#model-override-input", Input)
-
-            if backend == "openrouter":
-                api_key = env_vars.get("OPENROUTER_API_KEY", "")
-                if api_key:
-                    api_key_input.value = api_key
-                model = env_vars.get("OPENROUTER_MODEL") or env_vars.get("LLM_MODEL", "")
-                if model:
-                    model_override_input.value = model
-
-            elif backend == "nvidia_nim":
-                api_key = env_vars.get("NVIDIA_NIM_API_KEY", "")
-                if api_key:
-                    api_key_input.value = api_key
-                model = env_vars.get("NVIDIA_NIM_MODEL") or env_vars.get("LLM_MODEL", "")
-                if model:
-                    model_override_input.value = model
-
-            elif backend == "google_gemini":
-                api_key = env_vars.get("GEMINI_API_KEY", "")
-                if api_key:
-                    api_key_input.value = api_key
-                model = env_vars.get("GEMINI_MODEL") or env_vars.get("LLM_MODEL", "")
-                if model:
-                    model_override_input.value = model
-
-            else:
-                model = env_vars.get("LLM_MODEL", "")
-                if model:
-                    model_override_input.value = model
-                elif state.model_name:
-                    model_override_input.value = state.model_name
-
-        self.call_later(populate_inputs)
+            self.query_one("#api-key-section").display = True
+            self._selected_provider = backend
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         """React to provider radio button changes."""
@@ -227,7 +216,7 @@ class APISettingsScreen(Screen):
                 "AIzaSy... (Gemini API key)"
             )
             self.query_one("#model-override-input", Input).placeholder = (
-                "e.g. gemini-1.5-pro-latest"
+                "e.g. gemma-4-31b-it"
             )
             self.query_one("#model-override-input", Input).value = (
                 self.DEFAULT_MODELS["google_gemini"]
@@ -295,6 +284,11 @@ class APISettingsScreen(Screen):
             state.model_name = model_override
             if self._selected_provider != "ollama":
                 state.external_model = model_override
+                
+        # Save Vision settings to state
+        state.vision_provider = self.query_one("#vision-provider-select", Select).value
+        state.vision_api_key = self.query_one("#vision-key-input", Input).value.strip()
+        state.vision_model = self.query_one("#vision_model_input", Input).value.strip()
 
         # Write to .env
         project_root = Path(os.getcwd())

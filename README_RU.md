@@ -33,7 +33,7 @@ Smart Document Parser — это первый структурный блок п
 ### 🚀 Развертывание в один клик (Zero-Touch Deployment)
 Один скрипт `setup.sh` делает **всё**:
 - Автоматически создает изолированное виртуальное окружение Python (`.venv`).
-- Устанавливает все необходимые зависимости, включая `pandas`, `mammoth`, `paddleocr` и `markitdown`.
+- Устанавливает все необходимые зависимости, включая `pandas`, `mammoth`, `PyTorch`, `Transformers` (для GOT-OCR 2.0) и `markitdown`.
 - Запускает фоновый демон-Watchdog `ingestion_daemon.py`.
 
 ### 🛡️ Умная маршрутизация и отказоустойчивость (Body Armor)
@@ -53,7 +53,7 @@ Smart Document Parser — это первый структурный блок п
 | XLSX / XLS | `pandas` | Использует `dtype=str`, чтобы игнорировать математические/float ошибки в пустых ячейках. Файл разбивается на массивные чанки по 5000 символов, чтобы сохранить таблицы в идеальном виде. |
 | DOCX | `mammoth` + Regex | Конвертирует Word в Markdown, используя Regex для удаления огромных инлайн-изображений в формате Base64 (например, логотипов), чтобы сохранить контекст LLM чистым. |
 | DOC (Legacy) | LibreOffice (headless) | Невидимая фоновая конвертация в `.pdf`, который затем направляется в MarkItDown для чистого извлечения текста. |
-| Scanned PDF | `PaddleOCR` (Tier 2) | Применяет PaddleOCR с PP-Structure для визуального распознавания таблиц (WIP). |
+| Scanned PDF | `GOT-OCR 2.0` (Tier 2) | Применяет GOT-OCR 2.0 (через PyTorch и Transformers) для визуального распознавания текста и таблиц. |
 
 ## 📁 Структура директорий
 
@@ -112,7 +112,7 @@ graph TD
     B -->|".xlsx / .xls"| F["pandas"]
     B -->|".doc (Legacy)"| L["LibreOffice (headless) → PDF"]
     L --> C
-    B -->|"Scanned PDF"| G["PaddleOCR (Tier 2)"]
+    B -->|"Scanned PDF"| G["GOT-OCR 2.0 (Tier 2)"]
     
     C --> I["⚙️ Chunker (5000 chars)"]
     E --> I

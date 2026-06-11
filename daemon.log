@@ -1,4 +1,8 @@
-/home/mint/smart-db/core/text_processor.py:12: FutureWarning: 
+2026-06-11 08:40:22 │ INFO    │ orchestrator │ Orchestrator starting in OCR_ONLY mode
+2026-06-11 08:40:22 │ INFO    │ orchestrator │ Stopping LLM services to free VRAM...
+2026-06-11 08:40:35 │ INFO    │ orchestrator │ Starting OCR (Ingestion Daemon)...
+2026-06-11 08:40:35 │ INFO    │ orchestrator │ Stopping OCR (Ingestion Daemon) to free VRAM...
+/home/mint/smart-db/core/text_processor.py:17: FutureWarning: 
 
 All support for the `google.generativeai` package has ended. It will no longer be receiving 
 updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
@@ -7,8 +11,175 @@ See README for more details:
 https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
 
   import google.generativeai as genai
-2026-06-03 09:59:09 │ INFO    │ ingestion_daemon │ 🚀 Starting Ingestion Daemon (Phase 2 Pipeline)
-2026-06-03 09:59:09 │ INFO    │ ingestion_daemon │ Verified directory: /home/mint/smart-db/INPUT
-2026-06-03 09:59:09 │ INFO    │ ingestion_daemon │ Verified directory: /home/mint/smart-db/PROCESSED
-2026-06-03 09:59:09 │ INFO    │ ingestion_daemon │ Verified directory: /home/mint/smart-db/OUTPUT
-2026-06-03 09:59:09 │ INFO    │ ingestion_daemon │ 👀 Now monitoring /home/mint/smart-db/INPUT for new files...
+Initializing Docling DocumentConverter with Russian OCR...
+Docling ready.
+2026-06-11 08:40:41 │ INFO    │ ingestion_daemon │ 🚀 Starting Ingestion Daemon (Phase 2 Pipeline)
+2026-06-11 08:40:41 │ INFO    │ ingestion_daemon │ Verified directory: /home/mint/smart-db/INPUT
+2026-06-11 08:40:41 │ INFO    │ ingestion_daemon │ Verified directory: /home/mint/smart-db/PROCESSED
+2026-06-11 08:40:41 │ INFO    │ ingestion_daemon │ Verified directory: /home/mint/smart-db/OUTPUT
+2026-06-11 08:40:41 │ INFO    │ ingestion_daemon │ 👀 Now polling /home/mint/smart-db/INPUT every 30 seconds for new files...
+2026-06-11 08:41:11 │ INFO    │ ingestion_daemon │ Found 1 file(s) to process.
+2026-06-11 08:41:12 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: aid-7050.pdf
+Processing aid-7050.pdf with Docling...
+2026-06-11 08:41:12 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.PDF: 'pdf'>]
+2026-06-11 08:41:12 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:41:12 │ INFO    │ docling.document_converter │ Initializing pipeline for StandardPdfPipeline with options hash 0be8f8cc83886825b392a99e0fdb6525
+2026-06-11 08:41:12 │ INFO    │ docling.models.factories.base_factory │ Loading plugin 'docling_defaults'
+2026-06-11 08:41:12 │ INFO    │ docling.models.factories │ Registered picture descriptions: ['picture_description_vlm_engine', 'vlm', 'api']
+2026-06-11 08:41:12 │ INFO    │ docling.models.factories.base_factory │ Loading plugin 'docling_defaults'
+2026-06-11 08:41:12 │ INFO    │ docling.models.factories │ Registered ocr engines: ['auto', 'easyocr', 'kserve_v2_ocr', 'ocrmac', 'rapidocr', 'tesserocr', 'tesseract']
+2026-06-11 08:41:12 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract --list-langs
+2026-06-11 08:41:12 │ INFO    │ docling.models.factories.base_factory │ Loading plugin 'docling_defaults'
+2026-06-11 08:41:12 │ INFO    │ docling.models.factories │ Registered layout engines: ['layout_object_detection', 'docling_layout_default', 'docling_experimental_table_crops_layout']
+2026-06-11 08:41:12 │ INFO    │ docling.utils.accelerator_utils │ Accelerator device: 'cuda:0'
+2026-06-11 08:41:13 │ INFO    │ httpx │ HTTP Request: GET https://huggingface.co/api/models/docling-project/docling-layout-heron/revision/main "HTTP/1.1 200 OK"
+Loading weights:   0%|          | 0/770 [00:00<?, ?it/s]Loading weights:  31%|███       | 236/770 [00:00<00:00, 2257.21it/s]Loading weights:  60%|██████    | 462/770 [00:00<00:00, 1397.77it/s]Loading weights:  81%|████████  | 620/770 [00:00<00:00, 1339.82it/s]Loading weights:  99%|█████████▉| 763/770 [00:00<00:00, 1248.67it/s]Loading weights: 100%|██████████| 770/770 [00:00<00:00, 1341.40it/s]
+2026-06-11 08:41:14 │ INFO    │ docling.models.factories.base_factory │ Loading plugin 'docling_defaults'
+2026-06-11 08:41:14 │ INFO    │ docling.models.factories │ Registered table structure engines: ['docling_tableformer', 'docling_tableformer_v2', 'granite_vision_table']
+2026-06-11 08:41:15 │ INFO    │ httpx │ HTTP Request: GET https://huggingface.co/api/models/docling-project/docling-models/revision/v2.3.0 "HTTP/1.1 200 OK"
+2026-06-11 08:41:15 │ INFO    │ docling.utils.accelerator_utils │ Accelerator device: 'cuda:0'
+2026-06-11 08:41:15 │ INFO    │ docling.pipeline.base_pipeline │ Processing document aid-7050.pdf
+2026-06-11 08:41:19 │ INFO    │ docling.document_converter │ Finished converting document aid-7050.pdf in 6.73 sec.
+☁️ Complex elements (tables/figures) detected on pages: [5]
+Page 5: Complex figure processed via Gemini Vision.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/aid-7050.pdf.md
+2026-06-11 08:41:47 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for aid-7050.pdf: 7 chunk(s) generated.
+2026-06-11 08:48:47 │ INFO    │ ingestion_daemon │ Found 2 file(s) to process.
+2026-06-11 08:48:48 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: ! 20260515 форма 51_оборуд на контр.xlsx
+Processing ! 20260515 форма 51_оборуд на контр.xlsx with Docling...
+2026-06-11 08:48:48 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.XLSX: 'xlsx'>]
+2026-06-11 08:48:49 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:48:49 │ INFO    │ docling.document_converter │ Initializing pipeline for SimplePipeline with options hash 7d306d2d021deac65a97d1a5f925362a
+2026-06-11 08:48:49 │ INFO    │ docling.pipeline.base_pipeline │ Processing document ! 20260515 форма 51_оборуд на контр.xlsx
+2026-06-11 08:48:49 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 0: СТ_ВВИ as page 1
+2026-06-11 08:48:49 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 1: Вводы_ВВИ as page 2
+2026-06-11 08:48:49 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 2: ТТ_ВВИ as page 3
+2026-06-11 08:48:49 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 3: ТН_ВВИ as page 4
+2026-06-11 08:48:49 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 4: СТ ФХА as page 5
+2026-06-11 08:48:49 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 5: Вводы ФХА as page 6
+2026-06-11 08:48:49 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 6: Выкл ФХА as page 7
+2026-06-11 08:48:49 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 7: ТТ ФХА as page 8
+2026-06-11 08:48:49 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 8: ТН ФХА as page 9
+2026-06-11 08:48:49 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 9: СТ ХАРГ as page 10
+2026-06-11 08:48:50 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 10: Вводы ХАРГ as page 11
+2026-06-11 08:48:50 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 11: ТТ ХАРГ as page 12
+2026-06-11 08:48:50 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 12: ТН ХАРГ as page 13
+2026-06-11 08:48:50 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 13: ТВК ВЛ as page 14
+2026-06-11 08:48:50 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 14: ТВК ПС as page 15
+2026-06-11 08:48:50 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 15: УФ ВЛ as page 16
+2026-06-11 08:48:50 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 16: УФ ПС as page 17
+2026-06-11 08:48:50 │ INFO    │ docling.backend.msexcel_backend │ Processing sheet 17: Свод диагн форма as page 18
+2026-06-11 08:48:51 │ INFO    │ docling.document_converter │ Finished converting document ! 20260515 форма 51_оборуд на контр.xlsx in 3.29 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/! 20260515 форма 51_оборуд на контр.xlsx.md
+2026-06-11 08:48:52 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for ! 20260515 форма 51_оборуд на контр.xlsx: 510 chunk(s) generated.
+2026-06-11 08:48:53 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: 25_28012025 Гибкая система льгот.zip
+2026-06-11 08:48:53 │ INFO    │ core.ingestion_handler │ 📦 Archive detected: 25_28012025 Гибкая система льгот.zip. Extracting...
+2026-06-11 08:48:53 │ INFO    │ core.archive_extractor │ Successfully extracted archive 25_28012025 Гибкая система льгот.zip to /home/mint/smart-db/INPUT
+2026-06-11 08:48:53 │ INFO    │ core.ingestion_handler │ Extraction successful. Deleting original archive: 25_28012025 Гибкая система льгот.zip
+2026-06-11 08:49:23 │ INFO    │ ingestion_daemon │ Found 10 file(s) to process.
+2026-06-11 08:49:24 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: Приказ изменение Положения о гибких льготах_3-0_4-0_5-0.doc
+Legacy .doc detected: Приказ изменение Положения о гибких льготах_3-0_4-0_5-0.doc. Converting to PDF via LibreOffice...
+Processing Приказ изменение Положения о гибких льготах_3-0_4-0_5-0.doc with Docling...
+2026-06-11 08:49:25 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.PDF: 'pdf'>]
+2026-06-11 08:49:25 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:49:25 │ INFO    │ docling.pipeline.base_pipeline │ Processing document Приказ изменение Положения о гибких льготах_3-0_4-0_5-0.pdf
+2026-06-11 08:49:26 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract --psm 0 -l osd /tmp/tmp5id3tohv.png stdout
+2026-06-11 08:49:26 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract -l rus+eng /tmp/tmp5id3tohv.png stdout tsv
+2026-06-11 08:49:26 │ INFO    │ docling.document_converter │ Finished converting document Приказ изменение Положения о гибких льготах_3-0_4-0_5-0.pdf in 0.94 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/Приказ изменение Положения о гибких льготах_3-0_4-0_5-0.doc.md
+2026-06-11 08:49:27 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for Приказ изменение Положения о гибких льготах_3-0_4-0_5-0.doc: 1 chunk(s) generated.
+2026-06-11 08:49:28 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: В.А. Обвинцеву Корокам согл.docx
+Processing В.А. Обвинцеву Корокам согл.docx with Docling...
+2026-06-11 08:49:28 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.DOCX: 'docx'>]
+2026-06-11 08:49:28 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:49:28 │ INFO    │ docling.pipeline.base_pipeline │ Processing document В.А. Обвинцеву Корокам согл.docx
+2026-06-11 08:49:28 │ INFO    │ docling.document_converter │ Finished converting document В.А. Обвинцеву Корокам согл.docx in 0.11 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/В.А. Обвинцеву Корокам согл.docx.md
+2026-06-11 08:49:28 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for В.А. Обвинцеву Корокам согл.docx: 1 chunk(s) generated.
+2026-06-11 08:49:29 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: Приложение к приказу. Изменения в Положение_3_6-0.docx
+Processing Приложение к приказу. Изменения в Положение_3_6-0.docx with Docling...
+2026-06-11 08:49:29 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.DOCX: 'docx'>]
+2026-06-11 08:49:29 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:49:29 │ INFO    │ docling.pipeline.base_pipeline │ Processing document Приложение к приказу. Изменения в Положение_3_6-0.docx
+2026-06-11 08:49:29 │ INFO    │ docling.document_converter │ Finished converting document Приложение к приказу. Изменения в Положение_3_6-0.docx in 0.07 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/Приложение к приказу. Изменения в Положение_3_6-0.docx.md
+2026-06-11 08:49:29 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for Приложение к приказу. Изменения в Положение_3_6-0.docx: 2 chunk(s) generated.
+2026-06-11 08:49:30 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: !! Проект к согласованию с изм _09.01.2025_режим редактир_3.docx
+Processing !! Проект к согласованию с изм _09.01.2025_режим редактир_3.docx with Docling...
+2026-06-11 08:49:30 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.DOCX: 'docx'>]
+2026-06-11 08:49:30 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:49:30 │ INFO    │ docling.pipeline.base_pipeline │ Processing document !! Проект к согласованию с изм _09.01.2025_режим редактир_3.docx
+2026-06-11 08:49:31 │ WARNING │ docling.backend.msword_backend │ Parent element of the list item is not a ListGroup. The list item will be ignored.
+2026-06-11 08:49:32 │ INFO    │ docling.document_converter │ Finished converting document !! Проект к согласованию с изм _09.01.2025_режим редактир_3.docx in 1.84 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/!! Проект к согласованию с изм _09.01.2025_режим редактир_3.docx.md
+2026-06-11 08:49:32 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for !! Проект к согласованию с изм _09.01.2025_режим редактир_3.docx: 11 chunk(s) generated.
+2026-06-11 08:49:33 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: В.А. Обвинцеву АИД в ремонт 202405 согл.docx
+Processing В.А. Обвинцеву АИД в ремонт 202405 согл.docx with Docling...
+2026-06-11 08:49:33 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.DOCX: 'docx'>]
+2026-06-11 08:49:33 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:49:33 │ INFO    │ docling.pipeline.base_pipeline │ Processing document В.А. Обвинцеву АИД в ремонт 202405 согл.docx
+2026-06-11 08:49:33 │ INFO    │ docling.document_converter │ Finished converting document В.А. Обвинцеву АИД в ремонт 202405 согл.docx in 0.12 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/В.А. Обвинцеву АИД в ремонт 202405 согл.docx.md
+2026-06-11 08:49:33 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for В.А. Обвинцеву АИД в ремонт 202405 согл.docx: 1 chunk(s) generated.
+2026-06-11 08:49:34 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: В.А. Обвинцеву 2021.doc
+Legacy .doc detected: В.А. Обвинцеву 2021.doc. Converting to PDF via LibreOffice...
+Processing В.А. Обвинцеву 2021.doc with Docling...
+2026-06-11 08:49:35 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.PDF: 'pdf'>]
+2026-06-11 08:49:35 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:49:35 │ INFO    │ docling.pipeline.base_pipeline │ Processing document В.А. Обвинцеву 2021.pdf
+2026-06-11 08:49:35 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract --psm 0 -l osd /tmp/tmp4ou_9reg.png stdout
+2026-06-11 08:49:36 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract -l rus+eng /tmp/tmp4ou_9reg.png stdout tsv
+2026-06-11 08:49:36 │ INFO    │ docling.document_converter │ Finished converting document В.А. Обвинцеву 2021.pdf in 1.27 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/В.А. Обвинцеву 2021.doc.md
+2026-06-11 08:49:37 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for В.А. Обвинцеву 2021.doc: 1 chunk(s) generated.
+2026-06-11 08:49:38 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: В.А. Обвинцеву АИД УПК в ремонт согл.docx
+Processing В.А. Обвинцеву АИД УПК в ремонт согл.docx with Docling...
+2026-06-11 08:49:38 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.DOCX: 'docx'>]
+2026-06-11 08:49:38 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:49:38 │ INFO    │ docling.pipeline.base_pipeline │ Processing document В.А. Обвинцеву АИД УПК в ремонт согл.docx
+2026-06-11 08:49:38 │ INFO    │ docling.document_converter │ Finished converting document В.А. Обвинцеву АИД УПК в ремонт согл.docx in 0.11 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/В.А. Обвинцеву АИД УПК в ремонт согл.docx.md
+2026-06-11 08:49:38 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for В.А. Обвинцеву АИД УПК в ремонт согл.docx: 1 chunk(s) generated.
+2026-06-11 08:49:39 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: В.А. Обвинцеву КороКам в ремонт 202309 согл.docx
+Processing В.А. Обвинцеву КороКам в ремонт 202309 согл.docx with Docling...
+2026-06-11 08:49:39 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.DOCX: 'docx'>]
+2026-06-11 08:49:39 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:49:39 │ INFO    │ docling.pipeline.base_pipeline │ Processing document В.А. Обвинцеву КороКам в ремонт 202309 согл.docx
+2026-06-11 08:49:39 │ INFO    │ docling.document_converter │ Finished converting document В.А. Обвинцеву КороКам в ремонт 202309 согл.docx in 0.11 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/В.А. Обвинцеву КороКам в ремонт 202309 согл.docx.md
+2026-06-11 08:49:39 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for В.А. Обвинцеву КороКам в ремонт 202309 согл.docx: 1 chunk(s) generated.
+2026-06-11 08:49:40 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: Приказ № 25 от 22.01.2025 - О внес. изм. в ПЛ РС-ДУПиОП-31-2024.pdf
+Processing Приказ № 25 от 22.01.2025 - О внес. изм. в ПЛ РС-ДУПиОП-31-2024.pdf with Docling...
+2026-06-11 08:49:40 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.PDF: 'pdf'>]
+2026-06-11 08:49:40 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:49:40 │ INFO    │ docling.pipeline.base_pipeline │ Processing document Приказ № 25 от 22.01.2025 - О внес. изм. в ПЛ РС-ДУПиОП-31-2024.pdf
+2026-06-11 08:49:41 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract --psm 0 -l osd /tmp/tmppfuzh911.png stdout
+2026-06-11 08:49:42 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract -l rus+eng /tmp/tmppfuzh911.png stdout tsv
+2026-06-11 08:49:45 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract --psm 0 -l osd /tmp/tmpdq579ac5.png stdout
+2026-06-11 08:49:45 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract -l rus+eng /tmp/tmpdq579ac5.png stdout tsv
+2026-06-11 08:49:48 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract --psm 0 -l osd /tmp/tmput9ed3l4.png stdout
+2026-06-11 08:49:49 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract -l rus+eng /tmp/tmput9ed3l4.png stdout tsv
+2026-06-11 08:49:52 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract --psm 0 -l osd /tmp/tmpae6vb_hd.png stdout
+2026-06-11 08:49:52 │ INFO    │ docling.models.stages.ocr.tesseract_ocr_cli_model │ command: tesseract -l rus+eng /tmp/tmpae6vb_hd.png stdout tsv
+2026-06-11 08:49:53 │ INFO    │ docling.document_converter │ Finished converting document Приказ № 25 от 22.01.2025 - О внес. изм. в ПЛ РС-ДУПиОП-31-2024.pdf in 13.30 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/Приказ № 25 от 22.01.2025 - О внес. изм. в ПЛ РС-ДУПиОП-31-2024.pdf.md
+2026-06-11 08:49:54 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for Приказ № 25 от 22.01.2025 - О внес. изм. в ПЛ РС-ДУПиОП-31-2024.pdf: 3 chunk(s) generated.
+2026-06-11 08:49:55 │ INFO    │ core.ingestion_handler │ 📄 Processing new file: Лист регистрации изменений к ПЛ РС-ДУПиОП-31-2024 к Положению о Гибкая система корпорат льгот (2).docx
+Processing Лист регистрации изменений к ПЛ РС-ДУПиОП-31-2024 к Положению о Гибкая система корпорат льгот (2).docx with Docling...
+2026-06-11 08:49:55 │ INFO    │ docling.datamodel.document │ detected formats: [<InputFormat.DOCX: 'docx'>]
+2026-06-11 08:49:55 │ INFO    │ docling.document_converter │ Going to convert document batch...
+2026-06-11 08:49:55 │ INFO    │ docling.pipeline.base_pipeline │ Processing document Лист регистрации изменений к ПЛ РС-ДУПиОП-31-2024 к Положению о Гибкая система корпорат льгот (2).docx
+2026-06-11 08:49:55 │ INFO    │ docling.document_converter │ Finished converting document Лист регистрации изменений к ПЛ РС-ДУПиОП-31-2024 к Положению о Гибкая система корпорат льгот (2).docx in 0.17 sec.
+ℹ️ No complex elements flagged for Tier 3 processing.
+Saved Markdown archive: /home/mint/smart-db/PROCESSED/Лист регистрации изменений к ПЛ РС-ДУПиОП-31-2024 к Положению о Гибкая система корпорат льгот (2).docx.md
+2026-06-11 08:49:55 │ INFO    │ core.ingestion_handler │ ✅ Pipeline complete for Лист регистрации изменений к ПЛ РС-ДУПиОП-31-2024 к Положению о Гибкая система корпорат льгот (2).docx: 1 chunk(s) generated.
