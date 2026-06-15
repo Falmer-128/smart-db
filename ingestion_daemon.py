@@ -1,73 +1,113 @@
 #!/usr/bin/env python3
-"""
-Ingestion Daemon — Phase 2 Pipeline Watcher
-Continuously polls the INPUT directory for new files every 30 seconds.
-Delegates all processing to core.text_processor.process_file (MarkItDown / PaddleOCR / Gemini).
-"""
-
-import logging
-import time
+import os
 import sys
-from pathlib import Path
+import time
+import shutil
+import logging
+import requests
+from dotenv import load_dotenv
 
-from core.ingestion_handler import IngestionHandler
+dotenv_path = os.path.expanduser("~/smart-db/.env")
+load_dotenv(dotenv_path)
 
-# ── Logging setup ────────────────────────────────────────────
+API_KEY = os.environ.get("ANYTHINGLLM_API_KEY")
+
+if not API_KEY:
+    logging.critical("ANYTHINGLLM_API_KEY is not set or empty in .env. Exiting.")
+    sys.exit(1)
+BASE_URL = "http://127.0.0.1:3001/api/v1"
+WORKSPACE_SLUG = "dokumenty"
+STAGING_DIR = os.path.expanduser("~/smart-db/CHUNKS_STAGING")
+ARCHIVE_DIR = os.path.expanduser("~/smart-db/ARCHIVED")
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s │ %(levelname)-7s │ %(name)s │ %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    format="%(asctime)s [%(levelname)s] %(message)s"
 )
-logger = logging.getLogger("ingestion_daemon")
 
 def main():
-    logger.info("🚀 Starting Ingestion Daemon (Phase 2 Pipeline)")
+    os.makedirs(STAGING_DIR, exist_ok=True)
+    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    
+    logging.info(f"Started ingestion daemon. Monitoring {STAGING_DIR}")
 
-    base_dir = Path(__file__).parent.resolve()
-    input_dir = base_dir / "INPUT"
-    processed_dir = base_dir / "PROCESSED"
-    output_dir = base_dir / "OUTPUT"
-
-    # Ensure directories exist
-    for d in (input_dir, processed_dir, output_dir):
-        d.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Verified directory: {d}")
-
-    # Initialize handler — no legacy Deduplicator needed;
-    # text_processor.SemanticHasher handles dedup internally.
-    handler = IngestionHandler(
-        input_dir=str(input_dir),
-        processed_dir=str(processed_dir),
-        output_dir=str(output_dir),
-    )
-
-    logger.info(f"👀 Now polling {input_dir} every 30 seconds for new files...")
-
-    try:
-        while True:
-            # Find all non-hidden files in INPUT
-            files = [f for f in input_dir.iterdir() if f.is_file() and not f.name.startswith('.')]
-
-            if files:
-                logger.info(f"Found {len(files)} file(s) to process.")
-                for file_path in files:
+    while True:
+        try:
+            for filename in os.listdir(STAGING_DIR):
+                if not filename.endswith(".md"):
+                    continue
+                
+                filepath = os.path.join(STAGING_DIR, filename)
+                
+                # Upload Step
+                logging.info(f"Processing {filename}...")
+                upload_success = False
+                location = None
+                
+                try:
+                    with open(filepath, "rb") as f:
+                        response = requests.post(
+                            f"{BASE_URL}/document/upload",
+                            headers={
+                                "Authorization": f"Bearer {API_KEY}",
+                                "Accept": "application/json"
+                            },
+                            files={"file": (filename, f, "text/markdown")}
+                        )
+                        
+                    if response.status_code == 200:
+                        data = response.json()
+                        documents = data.get("documents", [])
+                        if documents and isinstance(documents, list) and len(documents) > 0:
+                            location = documents[0].get("location")
+                            if location:
+                                upload_success = True
+                            else:
+                                logging.error(f"Upload succeeded but no location found for {filename}")
+                        else:
+                            logging.error(f"Upload succeeded but 'documents' missing for {filename}")
+                    else:
+                        logging.error(f"Failed to upload {filename}. HTTP {response.status_code}: {response.text}")
+                except requests.RequestException as e:
+                    logging.error(f"Network error during upload of {filename}: {e}")
+                    
+                if not upload_success or not location:
+                    continue
+                
+                # Embed Step
+                embed_success = False
+                try:
+                    embed_response = requests.post(
+                        f"{BASE_URL}/workspace/{WORKSPACE_SLUG}/update-embeddings",
+                        headers={
+                            "Authorization": f"Bearer {API_KEY}",
+                            "Content-Type": "application/json",
+                            "Accept": "application/json"
+                        },
+                        json={"adds": [location], "deletes": []}
+                    )
+                    
+                    if embed_response.status_code == 200:
+                        logging.info(f"Successfully embedded {filename}.")
+                        embed_success = True
+                    else:
+                        logging.error(f"Failed to embed {filename}. HTTP {embed_response.status_code}: {embed_response.text}")
+                except requests.RequestException as e:
+                    logging.error(f"Network error during embedding of {filename}: {e}")
+                    
+                # Cleanup Step
+                if upload_success and embed_success:
+                    archive_path = os.path.join(ARCHIVE_DIR, filename)
                     try:
-                        handler.process_file(Path(file_path))
+                        shutil.move(filepath, archive_path)
+                        logging.info(f"Moved {filename} to archive.")
                     except Exception as e:
-                        logger.error(f"Error processing {file_path.name}: {e}", exc_info=True)
-            else:
-                logger.debug("No files found in INPUT directory.")
-
-            time.sleep(30)
-    except KeyboardInterrupt:
-        logger.info("🛑 Daemon interrupted by user. Shutting down...")
-    except Exception as e:
-        logger.critical(f"💥 Daemon crashed: {e}", exc_info=True)
-
-    logger.info("Daemon gracefully exited.")
+                        logging.error(f"Failed to move {filename} to archive: {e}")
+                        
+        except Exception as e:
+            logging.error(f"Unexpected error in main loop: {e}")
+            
+        time.sleep(10)
 
 if __name__ == "__main__":
     main()

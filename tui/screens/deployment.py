@@ -50,14 +50,16 @@ class DeploymentScreen(Screen):
     @work
     async def start_deployment(self) -> None:
         """
-        Writes the .env and runs docker-compose asynchronously.
-
-        When the backend is an external API (openrouter / nvidia_nim),
-        only the ``anythingllm`` service is started — the ``ollama``
-        container is not pulled or launched.
+        Writes the .env, runs Ollama, pulls necessary models,
+        and runs docker-compose for the remaining services.
         """
         log = self.query_one("#docker-log", RichLog)
         state = self.app.state
+        from tui.utils.docker_manager import DockerManager
+        docker_manager = DockerManager()
+
+        def log_callback(msg: str) -> None:
+            log.write(msg.rstrip("\n"))
 
         # Determine the project root assuming the script is run from the root
         project_root = os.getcwd()
@@ -91,18 +93,42 @@ class DeploymentScreen(Screen):
             log.write("[dim]Creating empty .env placeholder...[/dim]")
             open(env_path, "a").close()
 
-        # Decide which services to bring up based on the backend
-        backend = getattr(state, "backend", "ollama")
-        services = ["anythingllm"]
-        
-        if backend in ("openrouter", "nvidia_nim", "google_gemini"):
-            log.write(
-                f"\n[bold cyan]Backend is '{backend}' — "
-                f"skipping local Ollama container.[/bold cyan]"
-            )
-        else:
-            services.append("ollama")
+        # ── Step A: Always spin up Ollama ────────────────────────
+        log.write("\n[bold yellow]Starting local Ollama container...[/bold yellow]")
+        status = await docker_manager.ensure_ollama_running(cwd=project_root, log_callback=log_callback)
+        if not status.success:
+            log.write(f"\n[bold red]❌ Failed to start Ollama:[/bold red] {status.message}")
+            self.query_one("#launch_btn", Button).disabled = False
+            return
+        log.write("[bold green]✅ Ollama is ready![/bold green]")
 
+        # ── Step B: Pull bge-m3 embedding model ──────────────────
+        log.write("\n[bold yellow]Pulling bge-m3 embedding model...[/bold yellow]")
+        bge_status = await docker_manager.pull_model(model_name="bge-m3", log_callback=log_callback)
+        if not bge_status.success:
+            log.write("\n[bold red]Критическая ошибка: Не удалось запустить локальный векторный движок bge-m3[/bold red]")
+            log.write(f"[dim]{bge_status.message}[/dim]")
+            self.query_one("#launch_btn", Button).disabled = False
+            return
+        log.write("[bold green]✅ bge-m3 is ready![/bold green]")
+
+        # ── Step C: Conditional pull for text model ──────────────
+        backend = getattr(state, "llm_provider", getattr(state, "backend", "ollama"))
+        if backend == "ollama":
+            model_name = getattr(state, "model_name", "")
+            if model_name:
+                log.write(f"\n[bold yellow]Pulling LLM: {model_name}...[/bold yellow]")
+                llm_status = await docker_manager.pull_model(model_name=model_name, log_callback=log_callback)
+                if not llm_status.success:
+                    log.write(f"\n[bold red]❌ Failed to pull {model_name}:[/bold red] {llm_status.message}")
+                    self.query_one("#launch_btn", Button).disabled = False
+                    return
+                log.write(f"[bold green]✅ {model_name} is ready![/bold green]")
+        else:
+            log.write(f"\n[bold cyan]Backend is '{backend}' — skipping local text model download.[/bold cyan]")
+
+        # ── Start remaining services ─────────────────────────────
+        services = ["anythingllm"]
         log.write(f"\n[bold yellow]Starting Docker services: {', '.join(services)}...[/bold yellow]")
 
         try:

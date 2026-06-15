@@ -15,6 +15,7 @@ logger = logging.getLogger("orchestrator")
 
 def stop_llm():
     logger.info("Stopping LLM services to free VRAM...")
+    subprocess.run(["pkill", "-f", "upload_daemon.py"])
     subprocess.run(
         ["docker", "compose", "stop"],
         cwd=os.path.dirname(os.path.abspath(__file__)),
@@ -41,10 +42,19 @@ def start_llm():
         cmd,
         cwd=os.path.dirname(os.path.abspath(__file__))
     )
+    # Give AnythingLLM time to boot its API before starting upload daemon
+    time.sleep(5)
+    subprocess.Popen(
+        ["python3", "upload_daemon.py"],
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+        stdout=open("upload_daemon.log", "a"),
+        stderr=subprocess.STDOUT
+    )
 
 def stop_ocr():
     logger.info("Stopping OCR (Ingestion Daemon) to free VRAM...")
     subprocess.run(["pkill", "-f", "ingestion_daemon.py"])
+    subprocess.run(["pkill", "-f", "upload_daemon.py"])
     time.sleep(2) # Give VRAM time to free
 
 def start_ocr():

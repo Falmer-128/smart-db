@@ -148,7 +148,15 @@ if ! command_exists docker || ! docker compose version >/dev/null 2>&1; then
     command_exists docker || fail "Docker binary not found after installation."
     ok "Docker installed: $(docker --version 2>/dev/null)"
 else
-    ok "Docker already installed: $(docker --version 2>/dev/null)"
+    # ═════════════════════════════════════════════════════════════
+    # 8. OLLAMA & BGE-M3 INSTALLATION
+    # ═════════════════════════════════════════════════════════════
+    step "8/9  Backend Preparation"
+    info "Ollama and AI models are managed entirely via Docker and the TUI."
+    if [ -S /var/run/docker.sock ]; then
+        sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
+    fi
+    ok "Backend environment pre-flight complete."
 fi
 
 # ═════════════════════════════════════════════════════════════

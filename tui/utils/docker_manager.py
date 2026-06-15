@@ -127,7 +127,7 @@ class DockerManager:
                     resp = await client.get(OLLAMA_HEALTH_URL)
                     if resp.status_code == 200:
                         return DockerStatus(True, "Ollama is ready.")
-                except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout):
+                except httpx.RequestError:
                     pass  # Not up yet — keep polling
 
                 await asyncio.sleep(OLLAMA_POLL_INTERVAL)
@@ -137,6 +137,48 @@ class DockerManager:
             f"Ollama did not respond within {OLLAMA_STARTUP_TIMEOUT}s. "
             "Check `docker compose logs ollama` for details."
         )
+
+    async def pull_model(
+        self, model_name: str = "bge-m3", log_callback: Callable[[str], None] | None = None
+    ) -> DockerStatus:
+        self.reset_cancellation()
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                if log_callback:
+                    log_callback(f"Pulling model {model_name} from Ollama API...\n")
+                
+                async with client.stream(
+                    "POST", "http://localhost:11434/api/pull", json={"name": model_name}, timeout=None
+                ) as response:
+                    if response.status_code != 200:
+                        return DockerStatus(False, f"HTTP {response.status_code}")
+                    
+                    async for line in response.aiter_lines():
+                        if self._cancel_event.is_set():
+                            return DockerStatus(False, "Cancelled by user")
+                        if not line:
+                            continue
+                            
+                        import json
+                        try:
+                            data = json.loads(line)
+                            status = data.get("status", "")
+                            if "total" in data and "completed" in data:
+                                total = data["total"]
+                                completed = data["completed"]
+                                if total > 0:
+                                    percent = (completed / total) * 100
+                                    if log_callback:
+                                        log_callback(f"⏳ {status}: {percent:.1f}%\n")
+                            else:
+                                if log_callback:
+                                    log_callback(f"{status}\n")
+                        except json.JSONDecodeError:
+                            pass
+                return DockerStatus(True, f"Model {model_name} pulled successfully.")
+            except Exception as e:
+                return DockerStatus(False, f"Failed to pull model: {e}")
 
 
 

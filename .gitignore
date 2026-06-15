@@ -18,6 +18,8 @@ PROCESSED/*
 OUTPUT/*
 !OUTPUT/.gitkeep
 CHUNKS_STAGING/*
+ollama_data/*
+ollama_data
 
 
 # Исключаем случайные документы в корне

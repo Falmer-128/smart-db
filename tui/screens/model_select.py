@@ -288,6 +288,17 @@ class ModelSelectionScreen(Screen):
         )
         detail_label.update("")
 
+        model_status = await self.docker_manager.pull_model(
+            model_name="bge-m3",
+            log_callback=log_callback
+        )
+        if not model_status.success:
+            status_label.update("[bold red]❌ Failed to pull bge-m3[/bold red]")
+            detail_label.update(f"[bold red]{model_status.message}[/bold red]")
+            await asyncio.sleep(2)
+            self.update_ui_state(DownloadState.IDLE)
+            return
+
         await self._process_download_queue()
 
     async def _process_download_queue(self) -> None:
