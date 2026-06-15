@@ -36,3 +36,4 @@ ollama_data
 .DS_Store
 Thumbs.dboutput.txt
 .env
+.env.anythingllm

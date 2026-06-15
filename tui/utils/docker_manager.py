@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 from typing import AsyncGenerator, Any, Callable
+from pathlib import Path
 
 from dataclasses import dataclass
 
@@ -186,10 +187,16 @@ def generate_env_file(state: Any, filepath: str = ".env") -> None:
     """
     Generate the .env file for docker-compose based on the App state.
 
-    Reads the existing .env file to preserve internal variables (like AnythingLLM's SIG_KEY),
-    then updates/appends the core LLM settings and external provider API keys.
+    Writes ONLY infrastructure and host-pipeline routing variables.
+    AnythingLLM-specific LLM/Embedding preferences (LLM_PROVIDER,
+    GEMINI_API_KEY, EMBEDDING_ENGINE, etc.) are deliberately excluded —
+    those are managed by the user via the AnythingLLM Web UI and stored
+    in its internal SQLite database.
     """
-    env_vars = {}
+    import secrets
+
+    # ── Read existing .env to preserve generated secrets ──────────
+    existing = {}
     if os.path.exists(filepath):
         with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
@@ -197,61 +204,58 @@ def generate_env_file(state: Any, filepath: str = ".env") -> None:
                 if line and not line.startswith("#"):
                     if "=" in line:
                         k, v = line.split("=", 1)
-                        env_vars[k.strip()] = v.strip()
+                        existing[k.strip()] = v.strip()
 
-    # Core Settings
+    # ── Infrastructure (immutable) ────────────────────────────────
+    env_vars: dict[str, str] = {}
+    env_vars["SYSTEM_MODE"] = existing.get("SYSTEM_MODE", "PIPELINE")
+    env_vars["OLLAMA_BASE_PATH"] = "http://ollama:11434"
     env_vars["STORAGE_DIR"] = "/app/server/storage"
-    
-    # LLM routing
+    env_vars["GPU_TIER"] = str(getattr(state, "assigned_tier", existing.get("GPU_TIER", "")))
+    env_vars["ANYTHINGLLM_API_KEY"] = existing.get("ANYTHINGLLM_API_KEY", "")
+    env_vars["SIG_KEY"] = existing.get("SIG_KEY", secrets.token_hex(32))
+    env_vars["SIG_SALT"] = existing.get("SIG_SALT", secrets.token_hex(32))
+
+    # ── Host pipeline routing (consumed by llm_router.py) ─────────
     provider = getattr(state, "llm_provider", getattr(state, "backend", "ollama"))
-    env_vars["LLM_PROVIDER"] = provider
-    env_vars["LLM_MODEL"] = getattr(state, "model_name", "")
     env_vars["LLM_BACKEND"] = provider
-    env_vars["GPU_TIER"] = getattr(state, "assigned_tier", "")
+    env_vars["LLM_MODEL"] = getattr(state, "model_name", "gemma-4-31b-it")
 
-    # External provider API keys
+    # ── LLM API keys (consumed by host-side llm_router.py) ────────
     api_key = getattr(state, "api_key", "")
-    ext_model = getattr(state, "external_model", "")
+    if provider == "google_gemini" and api_key:
+        env_vars["GEMINI_API_KEY"] = api_key
+    elif provider == "openrouter" and api_key:
+        env_vars["OPENROUTER_API_KEY"] = api_key
+    elif provider == "nvidia_nim" and api_key:
+        env_vars["NVIDIA_NIM_API_KEY"] = api_key
 
-    if provider == "openrouter":
-        if api_key: env_vars["OPENROUTER_API_KEY"] = api_key
-        if ext_model: env_vars["OPENROUTER_MODEL"] = ext_model
-    elif provider == "nvidia_nim":
-        if api_key: env_vars["NVIDIA_NIM_API_KEY"] = api_key
-        if ext_model: env_vars["NVIDIA_NIM_MODEL"] = ext_model
-    elif provider == "google_gemini":
-        if api_key: env_vars["GEMINI_API_KEY"] = api_key
-        if ext_model: env_vars["GEMINI_MODEL"] = ext_model
-
-    # Downloaded models list
-    downloaded = getattr(state, "downloaded_models", [])
-    if downloaded:
-        env_vars["DOWNLOADED_MODELS"] = ",".join(downloaded)
-
-    # Vision provider settings
+    # ── Vision settings (consumed by text_processor.py) ───────────
     env_vars["VISION_PROVIDER"] = getattr(state, "vision_provider", "google")
-    
-    vision_key = getattr(state, "vision_api_key", "")
-    if vision_key:
-        env_vars["VISION_API_KEY"] = vision_key
-        
-    vision_model = getattr(state, "vision_model", "")
-    if vision_model:
-        env_vars["VISION_MODEL"] = vision_model
 
-    # Write back to .env
-    lines = ["# Auto-generated and merged by smart-db Setup Wizard"]
+    vision_key = getattr(state, "vision_api_key", "")
+    env_vars["VISION_API_KEY"] = vision_key if vision_key else ""
+
+    vision_model = getattr(state, "vision_model", "")
+    env_vars["VISION_MODEL"] = vision_model if vision_model else ""
+
+    # ── Write back to .env ────────────────────────────────────────
+    lines = ["# Infrastructure — managed by smart-db Setup Wizard"]
     for k, v in env_vars.items():
-        # Ensure values aren't explicitly single-quoted for Docker Compose
         val_str = str(v)
         if val_str.startswith("'") and val_str.endswith("'"):
             val_str = val_str[1:-1]
         lines.append(f"{k}={val_str}")
-        
+
     lines.append("")
 
     with open(filepath, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+
+    # Initialize an isolated env file for AnythingLLM to persist Web UI settings safely
+    sandbox_env = Path(".env.anythingllm")
+    if not sandbox_env.exists():
+        sandbox_env.touch()
 
 
 async def run_docker_compose_up(

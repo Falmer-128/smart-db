@@ -33,8 +33,8 @@ class APISettingsScreen(Screen):
     """Configure LLM backend provider, API keys, and model overrides."""
 
     DEFAULT_MODELS = {
-        "ollama": "",
-        "openrouter": "meta-llama/llama-3.1-8b-instruct",
+        "ollama": "gemma-4-31b-it",
+        "openrouter": "gemma-4-31b-it",
         "nvidia_nim": "meta/llama-3.1-8b-instruct",
         "google_gemini": "gemma-4-31b-it",
     }

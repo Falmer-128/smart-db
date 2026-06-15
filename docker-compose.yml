@@ -23,14 +23,15 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3001"
-    env_file:
-      - .env
+    environment:
+      - STORAGE_DIR=/app/server/storage
+      - OLLAMA_BASE_PATH=http://ollama:11434
+      - ANYTHINGLLM_API_KEY=${ANYTHINGLLM_API_KEY}
+      - SIG_KEY=${SIG_KEY}
+      - SIG_SALT=${SIG_SALT}
     volumes:
       - anythingllm_storage:/app/server/storage
-      - ./.env:/app/server/.env
-    environment:
-      - LLM_PROVIDER=${LLM_BACKEND:-ollama}
-      - OLLAMA_BASE_PATH=http://ollama:11434
+      - ./.env.anythingllm:/app/server/.env
 
 volumes:
   ollama_data:

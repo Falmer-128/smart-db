@@ -26,22 +26,8 @@ def stop_llm():
 
 def start_llm():
     logger.info("Starting LLM services...")
-    load_dotenv(override=True)
-    backend = os.getenv("LLM_BACKEND", "ollama")
-    
-    cmd = ["docker", "compose"]
-    if backend not in ("openrouter", "nvidia_nim", "google_gemini"):
-        cmd.extend(["--profile", "local_backend"])
-        
-    cmd.extend(["up", "-d"])
-    
-    if backend in ("openrouter", "nvidia_nim", "google_gemini"):
-        cmd.append("anythingllm")
-        
-    subprocess.run(
-        cmd,
-        cwd=os.path.dirname(os.path.abspath(__file__))
-    )
+    cmd = ["docker", "compose", "--profile", "local_backend", "up", "-d"]
+    subprocess.run(cmd, cwd=os.path.dirname(os.path.abspath(__file__)))
     # Give AnythingLLM time to boot its API before starting upload daemon
     time.sleep(5)
     subprocess.Popen(
