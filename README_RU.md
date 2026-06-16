@@ -4,7 +4,7 @@
 
 **Локальный модульный ETL-конвейер, превращающий сырые корпоративные документы в идеальные JSON-чанки для LLM.**
 
-[![Status: v0.5-alpha](https://img.shields.io/badge/status-v0.5--alpha-orange?style=for-the-badge)](https://github.com/)
+[![Status: v0.9 Beta](https://img.shields.io/badge/status-v0.9--beta-orange?style=for-the-badge)](https://github.com/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Deployment: Local / .venv](https://img.shields.io/badge/deployment-Local%20%2F%20.venv-2496ED?style=for-the-badge&logo=linux&logoColor=white)](#)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
@@ -20,54 +20,63 @@
 ---
 
 > [!WARNING]
-> **ПО стадии v0.5-alpha.** Активная разработка. Реализована Фаза 1 (умный парсинг, маршрутизация и чанкинг). API, структура директорий и конфигурация могут быть изменены без предупреждения.
+> **ПО стадии v0.9 Beta.** Активная разработка. Разработаны умный парсинг, маршрутизация, чанкинг и загрузка в векторную БД. API, структура директорий и конфигурация могут быть изменены без предупреждения.
 
 ## 📋 О проекте
 
 Smart Document Parser — это первый структурный блок полностью локального RAG-конвейера (Retrieval-Augmented Generation). Он поглощает сырые корпоративные документы — **PDF, DOCX, DOC, XLSX, CSV и отсканированные изображения** — и создает чистые `.json` файлы с чанками, готовые к векторизации и использованию LLM.
 
-Вся система работает как легковесный фоновый Python-демон (Watchdog) и разворачивается **одной командой** локально, без необходимости использования Docker.
+Вся система работает как набор легковесных фоновых Python-демонов и разворачивается **одной командой** локально (Docker нужен только для AnythingLLM).
 
 ## ✨ Ключевые фичи
+
+### 🛠️ Технологический стек
+- **Извлечение (Extraction)**: IBM Docling, Tesseract OCR (rus/eng), LibreOffice headless (для `.doc`).
+- **Облачный запасной вариант (Cloud Fallback - Tier 3)**: Google Gemini Vision API (для сложных схем и таблиц).
+- **RAG и UI**: AnythingLLM (в Docker).
+- **Локальная LLM**: Ollama.
 
 ### 🚀 Развертывание в один клик (Zero-Touch Deployment)
 Один скрипт `setup.sh` делает **всё**:
 - Автоматически создает изолированное виртуальное окружение Python (`.venv`).
-- Устанавливает все необходимые зависимости, включая `pandas`, `mammoth`, `PyTorch`, `Transformers` (для GOT-OCR 2.0) и `markitdown`.
-- Запускает фоновый демон-Watchdog `ingestion_daemon.py`.
+- Устанавливает все необходимые зависимости.
+- Запускает фоновые демоны.
 
 ### 🛡️ Умная маршрутизация и отказоустойчивость (Body Armor)
 - Файлы интеллектуально маршрутизируются к специализированным парсерам на основе их расширений.
-- **Body Armor:** Демон защищен надежными блоками `try/except`. Excel-файлы под паролем, поврежденные Word-документы или некорректные PDF не обрушат демона; они безопасно отправляются в карантин в папку `OUTPUT/`.
-- **Kill Switch для Gemini:** Для обработки сложных изображений (Tier 3) конвейер проверяет наличие API-ключа Gemini. Если ключ отсутствует в вашем `.env`, он безопасно пропускает Tier 3 без падения всего конвейера.
+- **Body Armor:** Демоны защищены надежными блоками `try/except`. Excel-файлы под паролем, поврежденные Word-документы или некорректные PDF не обрушат систему; они безопасно отправляются в карантин в папку `OUTPUT/`.
+- **Отказоустойчивый Tier 3 Gemini Fallback:** Надежная логика повторных сетевых запросов (обрабатывает ошибки 504, обрывы сети, ожидая по 60 секунд до 5 раз), чтобы документы никогда не зависали.
 
 ### 🔁 Дедупликация
 - Демон вычисляет MD5-хэш первых 300 слов каждого документа и сохраняет их в `content_hashes.json`.
 - Идентичные документы удаляются мгновенно, что предотвращает их повторную обработку и экономит дисковое пространство и API-запросы.
 
-### 📊 Поддержка множества форматов
+### ⚙️ Базовые демоны и оркестрация
+- **`orchestrator.py`**: Мониторит `INPUT/`. Убивает процесс LLM, чтобы освободить VRAM для OCR. Критически важно: теперь он ждет ровно **10 секунд тишины** (пустой INPUT) перед остановкой OCR и запуском демона загрузки и LLM.
+- **`ingestion_daemon.py`**: Мониторит `INPUT/` и извлекает данные. Включает отказоустойчивый фолбэк к Gemini ("Tier 3").
+- **`upload_daemon.py`**: Мониторит `CHUNKS_STAGING/`. Загружает векторы в AnythingLLM и перемещает чанки в `ARCHIVED/`.
 
-| Формат | Движок | Метод и стратегия |
-|:-------|:-------|:-------|
-| PDF, TXT, CSV | `MarkItDown` | Быстрое нативное извлечение текста с использованием движка Microsoft MarkItDown. |
-| XLSX / XLS | `pandas` | Использует `dtype=str`, чтобы игнорировать математические/float ошибки в пустых ячейках. Файл разбивается на массивные чанки по 5000 символов, чтобы сохранить таблицы в идеальном виде. |
-| DOCX | `mammoth` + Regex | Конвертирует Word в Markdown, используя Regex для удаления огромных инлайн-изображений в формате Base64 (например, логотипов), чтобы сохранить контекст LLM чистым. |
-| DOC (Legacy) | LibreOffice (headless) | Невидимая фоновая конвертация в `.pdf`, который затем направляется в MarkItDown для чистого извлечения текста. |
-| Scanned PDF | `GOT-OCR 2.0` (Tier 2) | Применяет GOT-OCR 2.0 (через PyTorch и Transformers) для визуального распознавания текста и таблиц. |
+### ⚙️ Конфигурация (Soft Decoupling)
+- Корневой `.env` является единым источником истины (Source of Truth) для инфраструктуры.
+- AnythingLLM использует изолированный `.env.anythingllm` через Docker для предотвращения перезаписи конфигурации.
 
-## 📁 Структура директорий
+## 📁 Структура директорий и конвейер
 
 ```text
 smart-db/
 │
-├── setup.sh                 # 🚀 Скрипт развертывания (venv + зависимости + демон)
-├── .env                     # Переменные окружения (API-ключи, конфиг)
-├── ingestion_daemon.py      # Watchdog демон, мониторящий директорию INPUT/
+├── setup.sh                 # 🚀 Скрипт развертывания
+├── .env                     # Основной конфиг и ключи API (Source of Truth)
+├── .env.anythingllm         # Изолированный конфиг для AnythingLLM (Docker)
+├── orchestrator.py          # Управляет VRAM (логика 10 секунд тишины)
+├── ingestion_daemon.py      # Мониторит INPUT/ и парсит документы
+├── upload_daemon.py         # Мониторит CHUNKS_STAGING/ и загружает в AnythingLLM
 │
-├── INPUT/                   # 📥 Положите сырые документы сюда.
-├── PROCESSED/               # 📤 Оригинальные файлы и полные .md архивы.
-├── CHUNKS_STAGING/          # 📦 Финальные .json чанки для Vector DB.
-└── OUTPUT/                  # 🛡️ Карантин для поврежденных файлов и файлов под паролем.
+├── INPUT/                   # 📥 Зона сброса сырых документов (Drop zone).
+├── CHUNKS_STAGING/          # 📦 Обработанные JSON-чанки.
+├── PROCESSED/               # 📤 Успешно обработанные оригиналы и .md бэкапы.
+├── OUTPUT/                  # 🛡️ Карантин для поврежденных файлов и файлов под паролем.
+└── ARCHIVED/                # 🗄️ JSON-чанки, успешно загруженные в AnythingLLM.
 ```
 
 ## 🚀 Быстрый старт
@@ -76,6 +85,7 @@ smart-db/
 
 - Linux-машина (протестировано на Linux Mint/Ubuntu).
 - Python 3.10+
+- Docker (для AnythingLLM)
 
 ### Запуск конвейера
 
@@ -91,38 +101,40 @@ cd smart-db
 cp /path/to/your/documents/* INPUT/
 ```
 
-Извлеченные чанки начнут появляться в `CHUNKS_STAGING/`.
+Извлеченные чанки начнут появляться в `CHUNKS_STAGING/`, а затем загрузятся в `ARCHIVED/`.
 
-### Остановка демона
+### Остановка демонов
 
-Если вы хотите остановить фоновый демон, просто выполните:
+Если вы хотите остановить фоновые процессы, просто выполните:
 
 ```bash
-pkill -f "python3.*ingestion_daemon.py"
+pkill -f "python3.*_daemon.py"
+pkill -f "python3.*orchestrator.py"
 ```
 
 ## 🔍 Как это работает
 
 ```mermaid
 graph TD
-    A["📥 INPUT/"] --> B{"🧠 Router"}
+    A["📥 INPUT/"] --> B{"🧠 Router (ingestion_daemon)"}
     
-    B -->|"PDF, TXT, CSV"| C["MarkItDown"]
-    B -->|".docx"| E["mammoth + Regex"]
-    B -->|".xlsx / .xls"| F["pandas"]
-    B -->|".doc (Legacy)"| L["LibreOffice (headless) → PDF"]
-    L --> C
-    B -->|"Scanned PDF"| G["GOT-OCR 2.0 (Tier 2)"]
+    B -->|"PDF, DOCX, XLSX"| C["IBM Docling"]
+    B -->|"Images/Scans"| E["Tesseract OCR (rus/eng)"]
+    B -->|".doc (Legacy)"| L["LibreOffice (headless)"]
+    B -->|"Complex Schematics/Tables"| G["Google Gemini Vision API (Tier 3)"]
     
-    C --> I["⚙️ Chunker (5000 chars)"]
+    C --> I["⚙️ Chunker"]
     E --> I
-    F --> I
+    L --> I
     G --> I
     
     I --> J["📦 CHUNKS_STAGING/ (JSON)"]
-    I --> K["📤 PROCESSED/ (.md Archives)"]
+    I --> K["📤 PROCESSED/ (.md Archives & Originals)"]
     
     B -.->|"Corrupted / Protected"| O["🛡️ OUTPUT/ (Quarantine)"]
+    
+    J -->|"upload_daemon"| U["AnythingLLM"]
+    J -->|"upload_daemon"| R["🗄️ ARCHIVED/"]
 ```
 
 ## 🗺️ Roadmap
@@ -132,16 +144,16 @@ graph TD
 ```mermaid
 graph TB
     subgraph "✅ Stage 1 — Document ETL (Current)"
-        A["Raw Documents<br/>PDF · DOCX · XLSX"] --> B["Smart Document Parser<br/>(v0.5-alpha)"]
+        A["Raw Documents<br/>PDF · DOCX · XLSX"] --> B["Smart Document Parser<br/>(v0.9 Beta)"]
         B --> C["Clean JSON Chunks"]
     end
 
-    subgraph "🔜 Stage 2 — Vector Store"
-        C --> D["LanceDB<br/>Vectorization + Storage"]
+    subgraph "✅ Stage 2 — Vector Store & UI"
+        C --> D["AnythingLLM (Dockerized)<br/>Vectorization + Storage"]
     end
 
-    subgraph "🔜 Stage 3 — Local LLM RAG"
-        D <-->|"RAG queries"| E["Ollama / Qwen 2.5<br/>Local Question Answering"]
+    subgraph "✅ Stage 3 — Local LLM RAG"
+        D <-->|"RAG queries"| E["Ollama<br/>Local Question Answering"]
     end
 
     style A fill:#ff6b6b,stroke:#c0392b,color:#fff
@@ -153,9 +165,9 @@ graph TB
 
 | Стадия | Компонент | Роль | Статус |
 |:------|:----------|:-----|:-------|
-| **1** | **Smart Document Parser** | Извлечение, очистка и чанкинг текста из корпоративных документов | ✅ v0.5-alpha |
-| **2** | **LanceDB** | Векторная база данных для сверхбыстрого поиска эмбеддингов документов | 🔜 Запланировано |
-| **3** | **Ollama + Qwen 2.5** | Локальная LLM для приватных, быстрых ответов на вопросы | 🔜 Запланировано |
+| **1** | **Smart Document Parser** | Извлечение, очистка и чанкинг текста из корпоративных документов | ✅ v0.9 Beta |
+| **2** | **AnythingLLM** | Векторная база данных и UI | ✅ Реализовано |
+| **3** | **Ollama** | Локальная LLM для приватных, быстрых ответов на вопросы | ✅ Реализовано |
 
 ## 🤝 Вклад в проект (Contributing)
 
