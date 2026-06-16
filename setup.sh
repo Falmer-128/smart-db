@@ -334,19 +334,19 @@ uv pip install watchdog python-dotenv pandas mammoth openpyxl xlrd pdf2image PyM
 ok "All Python dependencies installed."
 
 # ═════════════════════════════════════════════════════════════
-# 7. INGESTION DAEMON LIFECYCLE
+# 7. ORCHESTRATOR LIFECYCLE
 # ═════════════════════════════════════════════════════════════
-step "7/8  Ingestion daemon lifecycle"
+step "7/8  Orchestrator lifecycle"
 
-DAEMON_SCRIPT="ingestion_daemon.py"
-DAEMON_LOG="daemon.log"
-DAEMON_PID_FILE=".daemon.pid"
+DAEMON_SCRIPT="orchestrator.py"
+DAEMON_LOG="orchestrator.log"
+DAEMON_PID_FILE=".orchestrator.pid"
 
 # Kill any existing/zombie instances
 if [ -f "$DAEMON_PID_FILE" ]; then
     OLD_PID=$(cat "$DAEMON_PID_FILE" 2>/dev/null)
     if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-        info "Stopping existing daemon (PID: $OLD_PID)..."
+        info "Stopping existing orchestrator (PID: $OLD_PID)..."
         kill "$OLD_PID" 2>/dev/null || true
         sleep 1
         # Force kill if it didn't stop gracefully
@@ -355,18 +355,19 @@ if [ -f "$DAEMON_PID_FILE" ]; then
     rm -f "$DAEMON_PID_FILE"
 fi
 
-# Also kill any orphaned processes matching the daemon script name
+# Also kill any orphaned processes matching the orchestrator script name
 pkill -f "python3.*${DAEMON_SCRIPT}" 2>/dev/null || true
+# Kill child daemons just in case
+pkill -f "python3.*ingestion_daemon.py" 2>/dev/null || true
+pkill -f "python3.*upload_daemon.py" 2>/dev/null || true
 sleep 0.5
 
-
-
-# Start the daemon in the background
-info "Starting ingestion daemon in background..."
+# Start the orchestrator in the background
+info "Starting orchestrator in background..."
 nohup python3 "$DAEMON_SCRIPT" >> "$DAEMON_LOG" 2>&1 &
 DAEMON_PID=$!
 echo "$DAEMON_PID" > "$DAEMON_PID_FILE"
-ok "Ingestion daemon started (PID: $DAEMON_PID). Logs → $DAEMON_LOG"
+ok "Orchestrator started (PID: $DAEMON_PID). Logs → $DAEMON_LOG"
 
 # ═════════════════════════════════════════════════════════════
 # 8. TUI LAUNCH

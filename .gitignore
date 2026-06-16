@@ -20,6 +20,8 @@ OUTPUT/*
 CHUNKS_STAGING/*
 ollama_data/*
 ollama_data
+ARCHIVED/*
+ARCHIVED
 
 
 # Исключаем случайные документы в корне

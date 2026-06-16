@@ -497,16 +497,15 @@ def process_file(filepath, save_to_disk=False, enable_tier3=False):
                             print(f"Page {page_num}: Complex figure processed via Gemini Vision.", flush=True)
                             break
                         except Exception as e:
-                            err_msg = str(e).lower()
-                            if "429" in err_msg or "exhausted" in err_msg or "quota" in err_msg:
-                                if attempt < max_retries - 1:
-                                    print(f"⏳ API Rate limit reached. Waiting 60 seconds before retrying page {page_num}...", flush=True)
-                                    time.sleep(60)
-                                else:
-                                    print(f"Failed to process page {page_num} after {max_retries} attempts due to rate limits.", flush=True)
+                            if attempt < max_retries - 1:
+                                print(f"⚠️ API or Network error on page {page_num} (attempt {attempt+1}/{max_retries}): {e}. Waiting 60s...", flush=True)
+                                time.sleep(60)
                             else:
-                                print(f"Tier 3 processing failed for page {page_num} on attempt {attempt+1}: {e}", flush=True)
-                                break
+                                print(f"❌ Failed to process page {page_num} after {max_retries} attempts: {e}", flush=True)
+                                tier3_texts.append(
+                                    f"## ☁️ Детальное описание схемы (Страница {page_num})\n\n"
+                                    f"[Изображение пропущено из-за отсутствия сети или ответа сервера]"
+                                )
 
                 except Exception as e:
                     print(f"Tier 3 processing failed for page {page_num}: {e}", flush=True)

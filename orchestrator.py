@@ -13,11 +13,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger("orchestrator")
 
+_ingestion_proc = None
+_upload_proc = None
+
 def stop_llm():
+    global _upload_proc
     logger.info("Stopping LLM services to free VRAM...")
+    if _upload_proc and _upload_proc.poll() is None:
+        _upload_proc.terminate()
+        _upload_proc.wait()
+        _upload_proc = None
     subprocess.run(["pkill", "-f", "upload_daemon.py"])
     subprocess.run(
-        ["docker", "compose", "stop"],
+        ["docker", "compose", "--profile", "local_backend", "stop"],
         cwd=os.path.dirname(os.path.abspath(__file__)),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
@@ -25,34 +33,42 @@ def stop_llm():
     time.sleep(2) # Give VRAM time to free
 
 def start_llm():
+    global _upload_proc
     logger.info("Starting LLM services...")
     cmd = ["docker", "compose", "--profile", "local_backend", "up", "-d"]
     subprocess.run(cmd, cwd=os.path.dirname(os.path.abspath(__file__)))
     # Give AnythingLLM time to boot its API before starting upload daemon
     time.sleep(5)
-    subprocess.Popen(
-        ["python3", "upload_daemon.py"],
-        cwd=os.path.dirname(os.path.abspath(__file__)),
-        stdout=open("upload_daemon.log", "a"),
-        stderr=subprocess.STDOUT
-    )
+    
+    if _upload_proc is None or _upload_proc.poll() is not None:
+        _upload_proc = subprocess.Popen(
+            ["python3", "upload_daemon.py"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            stdout=open("upload.log", "a"),
+            stderr=subprocess.STDOUT
+        )
 
 def stop_ocr():
+    global _ingestion_proc
     logger.info("Stopping OCR (Ingestion Daemon) to free VRAM...")
+    if _ingestion_proc and _ingestion_proc.poll() is None:
+        _ingestion_proc.terminate()
+        _ingestion_proc.wait()
+        _ingestion_proc = None
     subprocess.run(["pkill", "-f", "ingestion_daemon.py"])
     subprocess.run(["pkill", "-f", "upload_daemon.py"])
     time.sleep(2) # Give VRAM time to free
 
 def start_ocr():
+    global _ingestion_proc
     logger.info("Starting OCR (Ingestion Daemon)...")
-    # Make sure we don't start multiple
-    stop_ocr()
-    subprocess.Popen(
-        ["python3", "ingestion_daemon.py"],
-        cwd=os.path.dirname(os.path.abspath(__file__)),
-        stdout=open("daemon.log", "a"),
-        stderr=subprocess.STDOUT
-    )
+    if _ingestion_proc is None or _ingestion_proc.poll() is not None:
+        _ingestion_proc = subprocess.Popen(
+            ["python3", "ingestion_daemon.py"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            stdout=open("ingestion.log", "a"),
+            stderr=subprocess.STDOUT
+        )
 
 def run_pipeline():
     input_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "INPUT"

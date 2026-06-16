@@ -44,6 +44,10 @@ ARCHIVE_DIR = _project_root / "ARCHIVED"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("upload.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 logger = logging.getLogger("upload_daemon")
 

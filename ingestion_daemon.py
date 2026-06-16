@@ -1,113 +1,60 @@
 #!/usr/bin/env python3
 import os
-import sys
 import time
-import shutil
 import logging
-import requests
 from dotenv import load_dotenv
+from pathlib import Path
+import sys
 
-dotenv_path = os.path.expanduser("~/smart-db/.env")
+_project_root = Path(__file__).resolve().parent
+sys.path.insert(0, str(_project_root))
+
+from core.text_processor import process_file
+
+dotenv_path = _project_root / ".env"
 load_dotenv(dotenv_path)
 
-API_KEY = os.environ.get("ANYTHINGLLM_API_KEY")
-
-if not API_KEY:
-    logging.critical("ANYTHINGLLM_API_KEY is not set or empty in .env. Exiting.")
-    sys.exit(1)
-BASE_URL = "http://127.0.0.1:3001/api/v1"
-WORKSPACE_SLUG = "dokumenty"
-STAGING_DIR = os.path.expanduser("~/smart-db/CHUNKS_STAGING")
-ARCHIVE_DIR = os.path.expanduser("~/smart-db/ARCHIVED")
+INPUT_DIR = str(_project_root / "INPUT")
+CHUNKS_DIR = str(_project_root / "CHUNKS_STAGING")
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("ingestion.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 def main():
-    os.makedirs(STAGING_DIR, exist_ok=True)
-    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.makedirs(CHUNKS_DIR, exist_ok=True)
     
-    logging.info(f"Started ingestion daemon. Monitoring {STAGING_DIR}")
+    logging.info(f"Started ingestion daemon. Monitoring {INPUT_DIR}")
 
     while True:
         try:
-            for filename in os.listdir(STAGING_DIR):
-                if not filename.endswith(".md"):
+            for filename in os.listdir(INPUT_DIR):
+                if filename.startswith("."):
                     continue
                 
-                filepath = os.path.join(STAGING_DIR, filename)
+                filepath = os.path.join(INPUT_DIR, filename)
                 
-                # Upload Step
-                logging.info(f"Processing {filename}...")
-                upload_success = False
-                location = None
-                
-                try:
-                    with open(filepath, "rb") as f:
-                        response = requests.post(
-                            f"{BASE_URL}/document/upload",
-                            headers={
-                                "Authorization": f"Bearer {API_KEY}",
-                                "Accept": "application/json"
-                            },
-                            files={"file": (filename, f, "text/markdown")}
-                        )
-                        
-                    if response.status_code == 200:
-                        data = response.json()
-                        documents = data.get("documents", [])
-                        if documents and isinstance(documents, list) and len(documents) > 0:
-                            location = documents[0].get("location")
-                            if location:
-                                upload_success = True
-                            else:
-                                logging.error(f"Upload succeeded but no location found for {filename}")
-                        else:
-                            logging.error(f"Upload succeeded but 'documents' missing for {filename}")
-                    else:
-                        logging.error(f"Failed to upload {filename}. HTTP {response.status_code}: {response.text}")
-                except requests.RequestException as e:
-                    logging.error(f"Network error during upload of {filename}: {e}")
-                    
-                if not upload_success or not location:
+                if not os.path.isfile(filepath):
                     continue
-                
-                # Embed Step
-                embed_success = False
+
+                logging.info(f"Ingesting {filename} via OCR...")
                 try:
-                    embed_response = requests.post(
-                        f"{BASE_URL}/workspace/{WORKSPACE_SLUG}/update-embeddings",
-                        headers={
-                            "Authorization": f"Bearer {API_KEY}",
-                            "Content-Type": "application/json",
-                            "Accept": "application/json"
-                        },
-                        json={"adds": [location], "deletes": []}
-                    )
-                    
-                    if embed_response.status_code == 200:
-                        logging.info(f"Successfully embedded {filename}.")
-                        embed_success = True
-                    else:
-                        logging.error(f"Failed to embed {filename}. HTTP {embed_response.status_code}: {embed_response.text}")
-                except requests.RequestException as e:
-                    logging.error(f"Network error during embedding of {filename}: {e}")
-                    
-                # Cleanup Step
-                if upload_success and embed_success:
-                    archive_path = os.path.join(ARCHIVE_DIR, filename)
-                    try:
-                        shutil.move(filepath, archive_path)
-                        logging.info(f"Moved {filename} to archive.")
-                    except Exception as e:
-                        logging.error(f"Failed to move {filename} to archive: {e}")
+                    # process_file handles Docling OCR, outputs JSON to CHUNKS_STAGING, and moves original to PROCESSED
+                    process_file(filepath, save_to_disk=True, enable_tier3=True)
+                    logging.info(f"Successfully processed {filename}.")
+                except Exception as e:
+                    logging.error(f"Failed to process {filename}: {e}")
                         
         except Exception as e:
             logging.error(f"Unexpected error in main loop: {e}")
             
-        time.sleep(10)
+        time.sleep(5)
 
 if __name__ == "__main__":
     main()
