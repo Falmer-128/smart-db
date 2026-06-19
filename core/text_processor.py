@@ -19,10 +19,13 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractCliOcrOptions
+from docling.datamodel.accelerator_options import AcceleratorOptions, AcceleratorDevice
 
 print("Initializing Docling DocumentConverter with Russian OCR...")
 pipeline_options = PdfPipelineOptions()
 pipeline_options.do_ocr = True
+pipeline_options.do_table_structure = True
+pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CUDA)
 
 # Explicitly set Tesseract to use Russian and English dictionaries
 pipeline_options.ocr_options = TesseractCliOcrOptions(lang=["rus", "eng"])
@@ -282,7 +285,7 @@ class DocumentRouter:
 # ═════════════════════════════════════════════════════════════════════════════
 # Chunking & Context Injection
 # ═════════════════════════════════════════════════════════════════════════════
-def chunk_and_inject(text, original_filename, doc_type, method):
+def chunk_and_inject(text, original_filename, doc_type, method, last_modified="Неизвестно"):
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=5000,
         chunk_overlap=500,
@@ -292,11 +295,12 @@ def chunk_and_inject(text, original_filename, doc_type, method):
 
     final_chunks = []
     for chunk in raw_chunks:
-        injected = f"[Файл: {original_filename} | Тип оригинала: {doc_type} | Метод: {method}] \n\n {chunk}"
+        injected = f"[Файл: {original_filename} | Изменен: {last_modified} | Тип оригинала: {doc_type} | Метод: {method}] \n\n {chunk}"
         final_chunks.append({
             "text": injected,
             "metadata": {
                 "filename": original_filename,
+                "last_modified": last_modified,
                 "doc_type": doc_type,
                 "method": method
             }
@@ -352,6 +356,13 @@ def process_file(filepath, save_to_disk=False, enable_tier3=False):
     # Legacy binary .doc files cannot be parsed by Docling directly.
     # Convert to PDF via LibreOffice headless, then process as PDF.
     original_filepath = filepath  # Preserve for PROCESSED move / quarantine
+
+    try:
+        mtime = os.path.getmtime(original_filepath)
+        last_modified_date = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        last_modified_date = "Неизвестно"
+
     tmp_pdf_path = None
     if ext == 'doc':
         print(f"Legacy .doc detected: {filename}. Converting to PDF via LibreOffice...")
@@ -372,70 +383,122 @@ def process_file(filepath, save_to_disk=False, enable_tier3=False):
     full_md = ""
     cloud_pages = []
 
-    try:
-        print(f"Processing {filename} with Docling...")
-        result = converter.convert(filepath)
-        doc = result.document
-
-        # Extract full document as Markdown
-        full_md = doc.export_to_markdown()
-
-        # ── Layout Router: Smart Fallback API Conservation ───
-        cloud_pages_set = set()
+    if ext in ['xlsx', 'xls']:
+        # ── Pandas Intercept for Excel ───────────────────────────────────────
+        # Docling hangs on massive .xlsx files (pure-Python cell-graph).
+        # Pandas (C-backend) converts sheets to Markdown tables instantly.
         try:
-            for item, _ in doc.iterate_items():
-                label_str = str(getattr(item, 'label', '')).lower()
+            print(f"Processing {filename} with Pandas (Excel intercept)...")
+            xls = pd.read_excel(filepath, sheet_name=None, header=None)
+            md_parts = []
+
+            for sheet_name, df in xls.items():
+                # 1. Жесткая зачистка: удаляем полностью пустые строки/столбцы
+                df.dropna(how='all', inplace=True)
+                df.dropna(axis=1, how='all', inplace=True)
                 
-                # 1. Route Figures (Always) and Large Pictures (Ignore small logos/stamps)
-                if "figure" in label_str:
-                    for prov in getattr(item, 'prov', []):
-                        if hasattr(prov, 'page_no'):
-                            cloud_pages_set.add(prov.page_no)
-                elif "picture" in label_str:
-                    is_large = False
-                    for prov in getattr(item, 'prov', []):
-                        if hasattr(prov, 'bbox'):
-                            bbox = prov.bbox
-                            # Check if width or height is substantial (e.g., > 200 points) to filter out small stamps
-                            if (bbox.r - bbox.l) > 200 or (bbox.b - bbox.t) > 200:
-                                is_large = True
-                                break
-                    if is_large:
+                if df.empty:
+                    continue
+                    
+                md_parts.append(f"### Данные из листа Excel: {sheet_name}\n")
+                
+                # 2. Bulletproof sanitization: convert everything to text safely
+                for col in df.columns:
+                    # Safely replace NaNs with empty strings and cast everything to string element-by-element
+                    df[col] = df[col].apply(lambda x: "" if pd.isna(x) else str(x))
+                    # Sanitize for Markdown tables
+                    df[col] = df[col].str.replace('\n', ' ', regex=False).str.replace('|', ' / ', regex=False).str.strip()
+
+                # Build Markdown table
+                header = df.iloc[0]
+                md_parts.append("| " + " | ".join(header) + " |")
+                md_parts.append("| " + " | ".join(["---"] * len(header)) + " |")
+
+                for _, row in df.iloc[1:].iterrows():
+                    values = list(row)
+                    if all(v == "" for v in values):
+                        continue
+                    md_parts.append("| " + " | ".join(values) + " |")
+
+                md_parts.append("")  # Blank line between sheets
+
+            full_md = "\n".join(md_parts)
+            print(f"Excel processed: {len(xls)} sheet(s) converted to Markdown.")
+
+        except Exception as e:
+            print(f"Pandas Excel processing failed for {filename}: {e}. Moving to OUTPUT (Quarantine).")
+            if os.path.exists(original_filepath):
+                shutil.move(original_filepath, os.path.join(OUTPUT_DIR, filename))
+            if tmp_pdf_path and os.path.exists(tmp_pdf_path):
+                os.remove(tmp_pdf_path)
+            return []
+
+    else:
+        # ── Standard Docling Processing ──────────────────────────────────────
+        try:
+            print(f"Processing {filename} with Docling...")
+            result = converter.convert(filepath)
+            doc = result.document
+
+            # Extract full document as Markdown
+            full_md = doc.export_to_markdown()
+
+            # ── Layout Router: Smart Fallback API Conservation ───
+            cloud_pages_set = set()
+            try:
+                for item, _ in doc.iterate_items():
+                    label_str = str(getattr(item, 'label', '')).lower()
+                    
+                    # 1. Route Figures (Always) and Large Pictures (Ignore small logos/stamps)
+                    if "figure" in label_str:
                         for prov in getattr(item, 'prov', []):
                             if hasattr(prov, 'page_no'):
                                 cloud_pages_set.add(prov.page_no)
-                # 2. Smart Fallback for Tables (Conserve API limits)
-                elif "table" in label_str:
-                    try:
-                        item_text = item.export_to_markdown(doc=doc)
-                        if "&#124;" in item_text or "tan" in item_text:
+                    elif "picture" in label_str:
+                        is_large = False
+                        for prov in getattr(item, 'prov', []):
+                            if hasattr(prov, 'bbox'):
+                                bbox = prov.bbox
+                                # Check if width or height is substantial (e.g., > 200 points) to filter out small stamps
+                                if (bbox.r - bbox.l) > 200 or (bbox.b - bbox.t) > 200:
+                                    is_large = True
+                                    break
+                        if is_large:
                             for prov in getattr(item, 'prov', []):
                                 if hasattr(prov, 'page_no'):
                                     cloud_pages_set.add(prov.page_no)
-                    except Exception as e:
-                        print(f"Warning: Failed to extract table text for Smart Fallback: {e}", flush=True)
-                        # Fallback: assume failure and route to Cloud Vision
-                        for prov in getattr(item, 'prov', []):
-                            if hasattr(prov, 'page_no'):
-                                cloud_pages_set.add(prov.page_no)
+                    # 2. Smart Fallback for Tables (Conserve API limits)
+                    elif "table" in label_str:
+                        try:
+                            item_text = item.export_to_markdown(doc=doc)
+                            if "&#124;" in item_text or "tan" in item_text:
+                                for prov in getattr(item, 'prov', []):
+                                    if hasattr(prov, 'page_no'):
+                                        cloud_pages_set.add(prov.page_no)
+                        except Exception as e:
+                            print(f"Warning: Failed to extract table text for Smart Fallback: {e}", flush=True)
+                            # Fallback: assume failure and route to Cloud Vision
+                            for prov in getattr(item, 'prov', []):
+                                if hasattr(prov, 'page_no'):
+                                    cloud_pages_set.add(prov.page_no)
+
+            except Exception as e:
+                print(f"Warning: Failed to iterate doc items for routing: {e}", flush=True)
+
+            cloud_pages = sorted(list(cloud_pages_set))
+
+            if cloud_pages:
+                print(f"☁️ Complex elements (tables/figures) detected on pages: {cloud_pages}", flush=True)
+            else:
+                print("ℹ️ No complex elements flagged for Tier 3 processing.", flush=True)
 
         except Exception as e:
-            print(f"Warning: Failed to iterate doc items for routing: {e}", flush=True)
-
-        cloud_pages = sorted(list(cloud_pages_set))
-
-        if cloud_pages:
-            print(f"☁️ Complex elements (tables/figures) detected on pages: {cloud_pages}", flush=True)
-        else:
-            print("ℹ️ No complex elements flagged for Tier 3 processing.", flush=True)
-
-    except Exception as e:
-        print(f"Docling conversion failed for {filename}: {e}. Moving to OUTPUT (Quarantine).")
-        if os.path.exists(original_filepath):
-            shutil.move(original_filepath, os.path.join(OUTPUT_DIR, filename))
-        if tmp_pdf_path and os.path.exists(tmp_pdf_path):
-            os.remove(tmp_pdf_path)
-        return []
+            print(f"Docling conversion failed for {filename}: {e}. Moving to OUTPUT (Quarantine).")
+            if os.path.exists(original_filepath):
+                shutil.move(original_filepath, os.path.join(OUTPUT_DIR, filename))
+            if tmp_pdf_path and os.path.exists(tmp_pdf_path):
+                os.remove(tmp_pdf_path)
+            return []
 
     # ── Step 2: Early Deduplication ──────────────────────────────────────────
     if full_md and len(full_md.strip()) > 10:
@@ -551,7 +614,7 @@ def process_file(filepath, save_to_disk=False, enable_tier3=False):
         print(f"Warning: failed to save .md archive for {filename}: {e}")
 
     # ── Step 8: Chunk & Inject Context ──────────────────────────────────────
-    final_chunks = chunk_and_inject(full_text, filename, doc_type="Document", method="Docling")
+    final_chunks = chunk_and_inject(full_text, filename, doc_type="Document", method="Docling", last_modified=last_modified_date)
 
     if save_to_disk:
         out_file = os.path.join(CHUNKS_DIR, f"{filename}.json")

@@ -330,7 +330,7 @@ if [ -f "requirements.txt" ]; then
     uv pip install -r requirements.txt >/dev/null 2>&1
 fi
 
-uv pip install watchdog python-dotenv pandas mammoth openpyxl xlrd pdf2image PyMuPDF python-docx tabulate langchain-text-splitters google-generativeai pillow verovio tiktoken textual httpx docling >/dev/null 2>&1
+uv pip install watchdog python-dotenv pandas mammoth openpyxl xlrd pdf2image PyMuPDF python-docx tabulate langchain-text-splitters google-generativeai pillow verovio tiktoken textual httpx docling py7zr rarfile >/dev/null 2>&1
 ok "All Python dependencies installed."
 
 # ═════════════════════════════════════════════════════════════
