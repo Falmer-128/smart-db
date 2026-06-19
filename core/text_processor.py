@@ -6,12 +6,15 @@ import subprocess
 from datetime import datetime
 import shutil
 import gc
+import logging
 import io
 import fitz  # PyMuPDF
 from PIL import Image
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 import pandas as pd
 import google.generativeai as genai
@@ -110,7 +113,9 @@ class RateLimiter:
                     pass
 
         if limits["daily_count"] >= 500:
-            return False, "Daily limit reached"
+            logger.warning("⏳ Local daily API counter reached 500. Sleeping for 3600 seconds (1 hour)...")
+            time.sleep(3600)
+            return RateLimiter.check_and_update()
 
         current_minute = now.strftime("%H:%M")
         minute_count = limits["minute_counts"].get(current_minute, 0)
@@ -159,8 +164,14 @@ class DocumentRouter:
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
 
+    def _is_quota_error(self, e):
+        """Check if an exception is a Google API quota/rate-limit error."""
+        error_str = str(e).lower()
+        return any(keyword in error_str for keyword in ["429", "quota", "exhausted", "resource_exhausted", "rate limit"])
+
     def process_tier3_image(self, image_path):
-        """Send a single page image to a Vision API."""
+        """Send a single page image to a Vision API.
+        Implements infinite sleep-and-retry on quota/rate-limit errors."""
         can_proceed, msg = RateLimiter.check_and_update()
         if not can_proceed:
             print(f"Skipping Vision API: {msg}")
@@ -176,110 +187,115 @@ class DocumentRouter:
         model_id = os.environ.get("VISION_MODEL", "")
         prompt = "Task: Transcribe all text from the image into Markdown. Format tables using Markdown syntax. Describe any complex schematics. Output ONLY the raw markdown content."
 
-        try:
-            if provider == "google":
-                import google.generativeai as genai
-                genai.configure(api_key=api_key)
-                target_model = model_id if model_id else "gemini-3.1-flash-lite"
-                model = genai.GenerativeModel(target_model)
-                sample_file = genai.upload_file(path=image_path)
-                response = model.generate_content([sample_file, prompt])
-                return response.text
+        while True:
+            try:
+                if provider == "google":
+                    import google.generativeai as genai
+                    genai.configure(api_key=api_key)
+                    target_model = model_id if model_id else "gemini-3.1-flash-lite"
+                    model = genai.GenerativeModel(target_model)
+                    sample_file = genai.upload_file(path=image_path)
+                    response = model.generate_content([sample_file, prompt])
+                    return response.text
 
-            elif provider == "anthropic":
-                import anthropic
-                import mimetypes
-                client = anthropic.Anthropic(api_key=api_key)
-                target_model = model_id if model_id else "claude-3-5-sonnet-20241022"
-                
-                media_type, _ = mimetypes.guess_type(image_path)
-                if not media_type:
-                    media_type = "image/png"
+                elif provider == "anthropic":
+                    import anthropic
+                    import mimetypes
+                    client = anthropic.Anthropic(api_key=api_key)
+                    target_model = model_id if model_id else "claude-3-5-sonnet-20241022"
                     
-                base64_image = self._encode_image_to_base64(image_path)
-                
-                response = client.messages.create(
-                    model=target_model,
-                    max_tokens=4096,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": media_type,
-                                        "data": base64_image,
+                    media_type, _ = mimetypes.guess_type(image_path)
+                    if not media_type:
+                        media_type = "image/png"
+                        
+                    base64_image = self._encode_image_to_base64(image_path)
+                    
+                    response = client.messages.create(
+                        model=target_model,
+                        max_tokens=4096,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "image",
+                                        "source": {
+                                            "type": "base64",
+                                            "media_type": media_type,
+                                            "data": base64_image,
+                                        },
                                     },
-                                },
-                                {
-                                    "type": "text",
-                                    "text": prompt
-                                }
-                            ],
-                        }
-                    ],
-                )
-                return response.content[0].text
-
-            elif provider in ["openai", "openrouter", "nvidia"]:
-                import openai
-                import mimetypes
-                
-                base_url = None
-                target_model = model_id
-                
-                if provider == "openai":
-                    if not target_model:
-                        target_model = "gpt-4o"
-                elif provider == "openrouter":
-                    base_url = "https://openrouter.ai/api/v1"
-                elif provider == "nvidia":
-                    base_url = "https://integrate.api.nvidia.com/v1"
-                
-                client_args = {"api_key": api_key}
-                if base_url:
-                    client_args["base_url"] = base_url
-                    
-                client = openai.OpenAI(**client_args)
-                
-                media_type, _ = mimetypes.guess_type(image_path)
-                if not media_type:
-                    media_type = "image/png"
-                    
-                base64_image = self._encode_image_to_base64(image_path)
-                data_uri = f"data:{media_type};base64,{base64_image}"
-                
-                response = client.chat.completions.create(
-                    model=target_model,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": prompt
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": data_uri
+                                    {
+                                        "type": "text",
+                                        "text": prompt
                                     }
-                                }
-                            ]
-                        }
-                    ]
-                )
-                return response.choices[0].message.content
+                                ],
+                            }
+                        ],
+                    )
+                    return response.content[0].text
 
-            else:
-                print(f"Unknown VISION_PROVIDER: {provider}")
+                elif provider in ["openai", "openrouter", "nvidia"]:
+                    import openai
+                    import mimetypes
+                    
+                    base_url = None
+                    target_model = model_id
+                    
+                    if provider == "openai":
+                        if not target_model:
+                            target_model = "gpt-4o"
+                    elif provider == "openrouter":
+                        base_url = "https://openrouter.ai/api/v1"
+                    elif provider == "nvidia":
+                        base_url = "https://integrate.api.nvidia.com/v1"
+                    
+                    client_args = {"api_key": api_key}
+                    if base_url:
+                        client_args["base_url"] = base_url
+                        
+                    client = openai.OpenAI(**client_args)
+                    
+                    media_type, _ = mimetypes.guess_type(image_path)
+                    if not media_type:
+                        media_type = "image/png"
+                        
+                    base64_image = self._encode_image_to_base64(image_path)
+                    data_uri = f"data:{media_type};base64,{base64_image}"
+                    
+                    response = client.chat.completions.create(
+                        model=target_model,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": prompt
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": data_uri
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    )
+                    return response.choices[0].message.content
+
+                else:
+                    print(f"Unknown VISION_PROVIDER: {provider}")
+                    return ""
+
+            except Exception as e:
+                if self._is_quota_error(e):
+                    logger.warning("⏳ Google API Quota exceeded. Sleeping for 3600 seconds (1 hour)...")
+                    time.sleep(3600)
+                    continue
+                print(f"Error with {provider} API: {e}")
                 return ""
-
-        except Exception as e:
-            print(f"Error with {provider} API: {e}")
-            return ""
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -549,8 +565,9 @@ def process_file(filepath, save_to_disk=False, enable_tier3=False):
                         "КРИТИЧЕСКИ ВАЖНО: Если на странице есть таблицы с числами, перенеси их в идеальные Markdown-таблицы. Сохраняй абсолютную точность каждого числа, запятой и единицы измерения (Ом, кВ, %, tan). Никаких галлюцинаций."
                     )
 
-                    max_retries = 5
-                    for attempt in range(max_retries):
+                    non_quota_retries = 0
+                    max_non_quota_retries = 5
+                    while True:
                         try:
                             time.sleep(4)
                             response = vision_model.generate_content([pil_img, prompt])
@@ -560,15 +577,24 @@ def process_file(filepath, save_to_disk=False, enable_tier3=False):
                             print(f"Page {page_num}: Complex figure processed via Gemini Vision.", flush=True)
                             break
                         except Exception as e:
-                            if attempt < max_retries - 1:
-                                print(f"⚠️ API or Network error on page {page_num} (attempt {attempt+1}/{max_retries}): {e}. Waiting 60s...", flush=True)
+                            error_str = str(e).lower()
+                            is_quota = any(kw in error_str for kw in ["429", "quota", "exhausted", "resource_exhausted", "rate limit"])
+                            if is_quota:
+                                logger.warning("⏳ Google API Quota exceeded. Sleeping for 3600 seconds (1 hour)...")
+                                time.sleep(3600)
+                                continue
+                            # Non-quota error: limited retries
+                            non_quota_retries += 1
+                            if non_quota_retries < max_non_quota_retries:
+                                print(f"⚠️ API or Network error on page {page_num} (attempt {non_quota_retries}/{max_non_quota_retries}): {e}. Waiting 60s...", flush=True)
                                 time.sleep(60)
                             else:
-                                print(f"❌ Failed to process page {page_num} after {max_retries} attempts: {e}", flush=True)
+                                print(f"❌ Failed to process page {page_num} after {max_non_quota_retries} non-quota attempts: {e}", flush=True)
                                 tier3_texts.append(
                                     f"## ☁️ Детальное описание схемы (Страница {page_num})\n\n"
                                     f"[Изображение пропущено из-за отсутствия сети или ответа сервера]"
                                 )
+                                break
 
                 except Exception as e:
                     print(f"Tier 3 processing failed for page {page_num}: {e}", flush=True)
